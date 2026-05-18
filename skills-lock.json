@@ -48,6 +48,12 @@
       "sourceType": "github",
       "skillPath": "skills/shadcn/SKILL.md",
       "computedHash": "80a6226e78f6d1fe464214ae0ef449d49d8ffaa3e7704f011e9b418c678ad4d1"
+    },
+    "workflow": {
+      "source": "vercel/workflow",
+      "sourceType": "github",
+      "skillPath": "skills/workflow/SKILL.md",
+      "computedHash": "d870ac314303f0b28cfeb8533567ac18df24f6e4d6b874e9f5261b5fddc29210"
     }
   }
 }
