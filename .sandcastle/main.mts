@@ -38,7 +38,24 @@ const SOURCE_BRANCH = execSync("git rev-parse --abbrev-ref HEAD", {
 }).trim();
 
 const readSandcastleEnv = (key: string) => {
-  const env = readFileSync(".sandcastle/.env", "utf8");
+  if (process.env[key]) {
+    return process.env[key];
+  }
+
+  let env = "";
+  try {
+    env = readFileSync(".sandcastle/.env", "utf8");
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
+
   const line = env
     .split(/\r?\n/)
     .find((entry) => entry.startsWith(`${key}=`));
@@ -48,7 +65,12 @@ const readSandcastleEnv = (key: string) => {
 
 const codexAgent = () =>
   sandcastle.codex("gpt-5.4-mini", {
-    env: { OPENAI_API_KEY: readSandcastleEnv("OPENAI_KEY") ?? "" },
+    env: {
+      OPENAI_API_KEY:
+        readSandcastleEnv("OPENAI_KEY") ??
+        readSandcastleEnv("OPENAI_API_KEY") ??
+        "",
+    },
   });
 
 // Hooks run inside the sandbox before the agent starts each iteration.

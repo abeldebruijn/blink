@@ -7,5 +7,10 @@ export default defineConfig([
   ...nextCoreWebVitals,
   ...nextTypescript,
   ...convexPlugin.configs.recommended,
-  globalIgnores(["convex/_generated"]),
+  globalIgnores([
+    "convex/_generated",
+    ".sandcastle/codex-home/**",
+    ".sandcastle/logs/**",
+    ".sandcastle/worktrees/**",
+  ]),
 ]);
