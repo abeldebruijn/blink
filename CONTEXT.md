@@ -60,9 +60,17 @@ _Avoid_: Reaction, rating
 A Reader's unread or read state for a Post.
 _Avoid_: Progress, reading history
 
+**Read Later**:
+A Reader's private saved-for-later state for a Post.
+_Avoid_: Bookmark, saved post, favorite
+
 **Home Feed**:
 The Reader's primary list of Posts from their Feed Subscriptions.
 _Avoid_: Global feed, discovery feed
+
+**Home Feed Item**:
+A Reader-specific inclusion of one Post in the Reader's Home Feed.
+_Avoid_: Feed row, timeline entry, computed post
 
 **Reading View**:
 The in-app view that shows a Post's Extracted Content.
@@ -119,6 +127,7 @@ _Avoid_: Reprocess, backfill
 - **Read Later** belongs to exactly one **Reader** and one **Post**
 - **Read State** belongs to exactly one **Reader** and one **Post**
 - A **Home Feed** shows **Posts** from a **Reader's** own **Feed Subscriptions**
+- A **Home Feed Item** belongs to exactly one **Reader** and one **Post**
 - A **Reading View** shows one **Post's Extracted Content**
 - An **Original Article Action** opens one **Canonical Article URL**
 - A **Displayed Source** is selected from a **Reader's** subscribed **Post Sources**
@@ -154,6 +163,8 @@ _Avoid_: Reprocess, backfill
 - Links inside **Extracted Content** remain clickable and open externally; Blink does not crawl linked pages in v1.
 - **Author Hide** targets the **Post Author** when known, otherwise the **Feed**.
 - **Importing Posts** and **Extraction Failed Posts** remain visible on the home page.
+- **Extracted Content** comes from Firecrawl reading the **Canonical Article URL** for each discovered **Post**.
+- RSS or Atom entry content is discovery and fallback metadata; Blink does not summarize only the feed description when page content can be extracted.
 - **Extracted Content** stores text only; images are referenced from their original servers rather than copied.
 - **Extracted Content** is stored as markdown text.
 - **Abstracts** require **Extracted Content**; feed summaries are not enough.
