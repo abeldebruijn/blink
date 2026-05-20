@@ -33,19 +33,7 @@ RUN set -eux; \
   chown -R "$AGENT_UID:$AGENT_GID" /home/agent
 
 # Install Codex CLI (run as root before USER agent)
-RUN npm install -g @openai/codex pnpm \
-  && mv /usr/local/bin/codex /usr/local/bin/codex-real \
-  && printf '%s\n' \
-    '#!/bin/sh' \
-    'set -eu' \
-    'api_key="${OPENAI_API_KEY:-${OPENAI_KEY:-}}"' \
-    'if [ -n "$api_key" ] && [ ! -f "${HOME:-/home/agent}/.codex/auth.json" ]; then' \
-    '  mkdir -p "${HOME:-/home/agent}/.codex"' \
-    '  printf "%s" "$api_key" | codex-real login --with-api-key >/dev/null 2>&1 || true' \
-    'fi' \
-    'exec codex-real "$@"' \
-    > /usr/local/bin/codex \
-  && chmod +x /usr/local/bin/codex
+RUN npm install -g @openai/codex pnpm
 
 USER ${AGENT_UID}:${AGENT_GID}
 

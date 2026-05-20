@@ -24,7 +24,9 @@
 import * as sandcastle from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -36,20 +38,29 @@ const MAX_ITERATIONS = 10;
 const SOURCE_BRANCH = execSync("git rev-parse --abbrev-ref HEAD", {
   encoding: "utf8",
 }).trim();
+const CODEX_HOME = ".sandcastle/codex-home";
 
-const readSandcastleEnv = (key: string) => {
-  const env = readFileSync(".sandcastle/.env", "utf8");
-  const line = env
-    .split(/\r?\n/)
-    .find((entry) => entry.startsWith(`${key}=`));
-
-  return line?.slice(key.length + 1).trim() || undefined;
+const syncCodexSubscriptionAuth = () => {
+  mkdirSync(CODEX_HOME, { recursive: true, mode: 0o700 });
+  copyFileSync(
+    join(homedir(), ".codex", "auth.json"),
+    join(CODEX_HOME, "auth.json"),
+  );
+  chmodSync(CODEX_HOME, 0o700);
+  chmodSync(join(CODEX_HOME, "auth.json"), 0o600);
 };
 
-const codexAgent = () =>
-  sandcastle.codex("gpt-5.4-mini", {
-    env: { OPENAI_API_KEY: readSandcastleEnv("OPENAI_KEY") ?? "" },
+const sandboxProvider = () =>
+  docker({
+    mounts: [
+      {
+        hostPath: ".sandcastle/codex-home",
+        sandboxPath: "~/.codex",
+      },
+    ],
   });
+
+const codexAgent = () => sandcastle.codex("gpt-5.4-mini");
 
 // Hooks run inside the sandbox before the agent starts each iteration.
 // pnpm install ensures the sandbox always has fresh dependencies.
@@ -70,6 +81,8 @@ const copyToWorktree: string[] = [];
 // Main loop
 // ---------------------------------------------------------------------------
 
+syncCodexSubscriptionAuth();
+
 for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   console.log(`\n=== Iteration ${iteration}/${MAX_ITERATIONS} ===\n`);
 
@@ -84,7 +97,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // -------------------------------------------------------------------------
   const plan = await sandcastle.run({
     hooks,
-    sandbox: docker(),
+    sandbox: sandboxProvider(),
     name: "planner",
     // One iteration is enough: the planner just needs to read and reason,
     // not write code.
@@ -134,7 +147,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     issues.map(async (issue) => {
       const sandbox = await sandcastle.createSandbox({
         branch: issue.branch,
-        sandbox: docker(),
+        sandbox: sandboxProvider(),
         hooks,
         copyToWorktree,
       });
@@ -160,11 +173,11 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
             maxIterations: 1,
             agent: codexAgent(),
             promptFile: "./.sandcastle/review-prompt.md",
-          promptArgs: {
-            BRANCH: issue.branch,
-            SOURCE_BRANCH,
-          },
-        });
+            promptArgs: {
+              BRANCH: issue.branch,
+              SOURCE_BRANCH,
+            },
+          });
 
           // Merge commits from both runs so the merge phase sees all of them.
           // Each sandbox.run() only returns commits from its own run.
@@ -227,7 +240,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // -------------------------------------------------------------------------
   await sandcastle.run({
     hooks,
-    sandbox: docker(),
+    sandbox: sandboxProvider(),
     name: "merger",
     maxIterations: 1,
     agent: codexAgent(),
