@@ -6,7 +6,9 @@
     "dev": "convex dev --start 'next dev'",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "sandcastle": "npx tsx .sandcastle/main.mts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -25,6 +27,7 @@
     "vaul": "^1.1.2"
   },
   "devDependencies": {
+    "@ai-hero/sandcastle": "^0.5.10",
     "@convex-dev/eslint-plugin": "^1.2.2",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^24.12.2",
