@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation } from "convex/react";
-import { Bookmark, ChevronDown, ChevronUp, Heart, ThumbsDown } from "lucide-react";
+import {
+  Bookmark,
+  ChevronDown,
+  ChevronUp,
+  Heart,
+  ThumbsDown,
+} from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { filterHomeFeedItems, parseFeedFilter } from "./feed-utils";
 import { FeedFilterPopover } from "./feed-filter-popover";
@@ -108,9 +114,11 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
       aria-label="Home Feed Posts"
       className="relative h-screen snap-y snap-mandatory overflow-y-auto bg-[#101418] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
-      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[680px] z-50 flex items-center justify-between p-5 bg-[#101418]/60 backdrop-blur-md border-b border-white/5">
+      <header className="fixed top-0 left-1/2 z-50 flex w-full max-w-[680px] -translate-x-1/2 items-center justify-between border-b border-white/5 bg-[#101418]/60 px-4 py-3 backdrop-blur-md sm:p-5">
         <div>
-          <h1 className="text-3xl font-black italic leading-none text-white">Blink</h1>
+          <h1 className="text-2xl font-black italic leading-none text-white sm:text-3xl">
+            Blink
+          </h1>
         </div>
         <FeedFilterPopover
           selectedFeed={selectedFeed}
@@ -139,7 +147,9 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
           }
         />
       ))}
-      <div className="fixed right-[max(1rem,calc(50vw-340px+1rem))] top-[68%] z-50 grid -translate-y-1/2 gap-3">
+      <div
+        className="fixed right-[max(0.35rem,calc(50vw-340px+1rem))] top-[68%] z-50 grid -translate-y-1/2 gap-2 sm:right-[max(1rem,calc(50vw-340px+1rem))] sm:gap-3"
+      >
         <StoryActionButton
           label="Previous Post"
           icon={<ChevronUp />}

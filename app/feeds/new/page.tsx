@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { SignInButton, useUser } from "@clerk/nextjs";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { AlertCircle, CheckCircle2, Loader2, Rss, Sparkles } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Rss } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { BottomNav } from "@/app/_components/bottom-nav";
@@ -175,14 +175,9 @@ export default function AddFeedPage() {
                   <button
                     type="submit"
                     disabled={isSubmitting || !readerReady}
-                    className="inline-flex h-12 shrink-0 items-center gap-2 rounded-full bg-white px-5 text-sm font-black text-[#101418] transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-55"
+                    className="inline-flex h-12 shrink-0 items-center rounded-full bg-white px-5 text-sm font-black text-[#101418] transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-55"
                   >
-                    {isSubmitting ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <Sparkles className="size-4" aria-hidden="true" />
-                    )}
-                    Import
+                    Import feed
                   </button>
                 </div>
                 {submitError !== null ? (
