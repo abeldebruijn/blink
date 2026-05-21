@@ -156,6 +156,57 @@ export const list = query({
   },
 });
 
+export const getReadingView = query({
+  args: {
+    postId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const reader = await requireCurrentReader(ctx);
+    const postId = ctx.db.normalizeId("posts", args.postId);
+    if (postId === null) {
+      return null;
+    }
+
+    const item = await ctx.db
+      .query("homeFeedItems")
+      .withIndex("by_readerId_and_postId", (q) =>
+        q.eq("readerId", reader._id).eq("postId", postId),
+      )
+      .unique();
+
+    if (item === null) {
+      return null;
+    }
+
+    const post = await ctx.db.get(postId);
+    if (post === null) {
+      return null;
+    }
+
+    return {
+      postId,
+      homeFeedItemId: item._id,
+      source: {
+        title: post.sourceTitle,
+        siteUrl: post.sourceSiteUrl,
+        feedUrl: post.sourceFeedUrl,
+      },
+      title: post.rssTitle,
+      canonicalUrl: post.canonicalUrl,
+      headerImageUrl: post.headerImageUrl,
+      publishedAt: post.publishedAt,
+      discoveredAt: post.discoveredAt,
+      firecrawlPageContent: post.firecrawlPageContent,
+      firecrawlStatus: post.firecrawlStatus ?? null,
+      abstractStatus: post.abstractStatus ?? null,
+      readAt: item.readAt,
+      isRead: item.readAt !== null,
+      savedAt: item.savedAt ?? null,
+      isSaved: item.savedAt !== undefined && item.savedAt !== null,
+    };
+  },
+});
+
 export const markRead = mutation({
   args: {
     homeFeedItemId: v.id("homeFeedItems"),
@@ -172,6 +223,74 @@ export const markRead = mutation({
       readAt: args.read ? Date.now() : null,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const toggleSave = mutation({
+  args: {
+    homeFeedItemId: v.id("homeFeedItems"),
+    saved: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const reader = await requireCurrentReader(ctx);
+    const item = await ctx.db.get(args.homeFeedItemId);
+    if (item === null || item.readerId !== reader._id) {
+      throw new ConvexError("Home feed item not found");
+    }
+
+    await ctx.db.patch(args.homeFeedItemId, {
+      savedAt: args.saved ? Date.now() : null,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const listSaved = query({
+  args: {},
+  handler: async (ctx) => {
+    const reader = await requireCurrentReader(ctx);
+    const items = await ctx.db
+      .query("homeFeedItems")
+      .withIndex("by_readerId_and_sortTime", (q) =>
+        q.eq("readerId", reader._id),
+      )
+      .order("desc")
+      .collect();
+
+    const results = [];
+    for (const item of items) {
+      if (item.savedAt === undefined || item.savedAt === null) {
+        continue;
+      }
+      const post = await ctx.db.get(item.postId);
+      if (post === null) {
+        continue;
+      }
+
+      results.push({
+        _id: item._id,
+        postId: item.postId,
+        source: {
+          title: post.sourceTitle,
+          siteUrl: post.sourceSiteUrl,
+          feedUrl: post.sourceFeedUrl,
+        },
+        title: post.rssTitle,
+        abstract: post.abstract,
+        abstractSource: post.abstractSource,
+        firecrawlStatus: post.firecrawlStatus ?? null,
+        abstractStatus: post.abstractStatus ?? null,
+        headerImageUrl: post.headerImageUrl,
+        publishedAt: post.publishedAt,
+        discoveredAt: post.discoveredAt,
+        canonicalUrl: post.canonicalUrl,
+        readAt: item.readAt,
+        isRead: item.readAt !== null,
+        savedAt: item.savedAt,
+      });
+    }
+
+    return results;
   },
 });
 

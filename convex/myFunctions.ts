@@ -76,3 +76,22 @@ export const myAction = action({
     });
   },
 });
+
+export const searchPostsForMarkdown = query({
+  args: {
+    keyword: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const posts = await ctx.db.query("posts").collect();
+    for (const post of posts) {
+      if (post.firecrawlPageContent && post.firecrawlPageContent.toLowerCase().includes(args.keyword.toLowerCase())) {
+        return {
+          title: post.rssTitle,
+          content: post.firecrawlPageContent,
+          canonicalUrl: post.canonicalUrl,
+        };
+      }
+    }
+    return null;
+  },
+});
