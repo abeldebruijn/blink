@@ -5,6 +5,7 @@ import { SignInButton, useUser } from "@clerk/nextjs";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { AlertCircle, CheckCircle2, Loader2, Rss, Sparkles } from "lucide-react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { BottomNav } from "@/app/_components/bottom-nav";
 
 type Status = "pending" | "succeeded" | "failed" | null;
@@ -33,10 +34,12 @@ export default function AddFeedPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const ensureCurrentReader = useMutation(api.readers.ensureCurrent);
   const startInitialImport = useAction(api.feedImports.startInitialImport);
+  const retryPost = useAction(api.feedImports.retryPost);
   const [submittedFeedUrl, setSubmittedFeedUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [ensuredUserId, setEnsuredUserId] = useState<string | null>(null);
+  const [retryingPostId, setRetryingPostId] = useState<string | null>(null);
   const userId = user?.id;
 
   useEffect(() => {
@@ -90,6 +93,20 @@ export default function AddFeedPage() {
       );
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function onRetryPost(postId: Id<"posts">) {
+    setRetryingPostId(postId);
+    setSubmitError(null);
+    try {
+      await retryPost({ postId });
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Could not retry Post",
+      );
+    } finally {
+      setRetryingPostId(null);
     }
   }
 
@@ -250,6 +267,23 @@ export default function AddFeedPage() {
                               label={`Abstract ${statusLabel(post.abstractStatus)}`}
                               status={post.abstractStatus}
                             />
+                            {post.firecrawlStatus === "failed" ||
+                            post.abstractStatus === "failed" ? (
+                              <button
+                                type="button"
+                                onClick={() => void onRetryPost(post._id)}
+                                disabled={retryingPostId === post._id}
+                                className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#171717] px-3 text-xs font-black text-white transition hover:bg-[#2a2a2a] disabled:cursor-not-allowed disabled:opacity-55"
+                              >
+                                {retryingPostId === post._id ? (
+                                  <Loader2
+                                    className="size-3.5 animate-spin"
+                                    aria-hidden="true"
+                                  />
+                                ) : null}
+                                Retry
+                              </button>
+                            ) : null}
                           </div>
                           {post.abstract !== null ? (
                             <p className="text-sm leading-6 text-[#5d554b]">

@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { generateText, gateway } from "ai";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalAction } from "./_generated/server";
@@ -6,6 +7,8 @@ import { internalAction } from "./_generated/server";
 const firecrawlScrapeUrl = "https://api.firecrawl.dev/v2/scrape";
 const maxStoredContentLength = 60_000;
 const maxAbstractLength = 700;
+const maxAbstractInputLength = 16_000;
+const abstractModel = "openai/gpt-5.1";
 
 type FirecrawlScrapeResponse = {
   success?: boolean;
@@ -71,6 +74,29 @@ function summarizeMarkdown(markdown: string) {
   return truncate(summary, maxAbstractLength);
 }
 
+async function generateAbstract(markdown: string, title: string) {
+  if ((process.env.AI_GATEWAY_API_KEY ?? "").trim() === "") {
+    throw new ConvexError("AI_GATEWAY_API_KEY is not configured");
+  }
+
+  const { text } = await generateText({
+    model: gateway(abstractModel),
+    system:
+      "You write Blink Abstracts. Return exactly one short paragraph of about four short sentences. Use this shape: introduction, why interesting, conclusion. Do not use headings or bullets.",
+    prompt: `Post title: ${title}\n\nExtracted Content:\n${markdown.slice(
+      0,
+      maxAbstractInputLength,
+    )}`,
+  });
+
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized === "") {
+    throw new ConvexError("AI returned an empty Abstract");
+  }
+
+  return truncate(normalized, maxAbstractLength);
+}
+
 async function scrapeWithFirecrawl(canonicalUrl: string) {
   const apiKey = process.env.FIRECRAWL_API_KEY;
   if (apiKey === undefined || apiKey.trim() === "") {
@@ -122,6 +148,8 @@ async function scrapeWithFirecrawl(canonicalUrl: string) {
 
 export const ingestRssEntry = internalAction({
   args: {
+    feedId: v.optional(v.union(v.id("feeds"), v.null())),
+    feedImportRunId: v.optional(v.union(v.id("feedImportRuns"), v.null())),
     readerId: v.id("readers"),
     sourceTitle: v.string(),
     sourceSiteUrl: v.union(v.string(), v.null()),
@@ -150,7 +178,8 @@ export const ingestRssEntry = internalAction({
       existing?.firecrawlStatus === "succeeded" &&
       existing.firecrawlVisitedAt !== null
     ) {
-      return await ctx.runMutation(internal.homeFeed.upsertPost, {
+      const result: { postId: Id<"posts">; homeFeedItemId: Id<"homeFeedItems"> } =
+        await ctx.runMutation(internal.homeFeed.upsertPost, {
         ...args,
         canonicalUrl,
         firecrawlStatus: "succeeded",
@@ -158,25 +187,77 @@ export const ingestRssEntry = internalAction({
         firecrawlPageContent: existing.firecrawlPageContent,
         firecrawlPageSummary: existing.firecrawlPageSummary,
         firecrawlError: null,
+        abstractStatus:
+          existing.firecrawlPageSummary !== null ? "succeeded" : "failed",
+        abstractError:
+          existing.firecrawlPageSummary !== null
+            ? null
+            : "Existing Post has no Abstract",
         headerImageUrl: null,
       });
+      if (args.feedImportRunId !== undefined && args.feedImportRunId !== null) {
+        await ctx.runMutation(internal.feedImports.recordPostProcessed, {
+          feedImportRunId: args.feedImportRunId,
+          ok: existing.firecrawlPageSummary !== null,
+        });
+      }
+      return result;
     }
+
+    await ctx.runMutation(internal.homeFeed.upsertPost, {
+      ...args,
+      canonicalUrl,
+      firecrawlStatus: "pending",
+      firecrawlVisitedAt: null,
+      firecrawlPageContent: null,
+      firecrawlPageSummary: null,
+      firecrawlError: null,
+      abstractStatus: "pending",
+      abstractError: null,
+      headerImageUrl: null,
+    });
 
     const scraped = await scrapeWithFirecrawl(canonicalUrl).catch((error) => ({
       ok: false as const,
       error: error instanceof Error ? error.message : "Firecrawl scrape failed",
     }));
     const visitedAt = Date.now();
+    const generated =
+      scraped.ok === true
+        ? await generateAbstract(scraped.content, args.rssTitle).then(
+            (abstract) => ({ ok: true as const, abstract }),
+            (error) => ({
+              ok: false as const,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Abstract generation failed",
+            }),
+          )
+        : { ok: false as const, error: scraped.error };
 
-    return await ctx.runMutation(internal.homeFeed.upsertPost, {
+    const result: { postId: Id<"posts">; homeFeedItemId: Id<"homeFeedItems"> } =
+      await ctx.runMutation(internal.homeFeed.upsertPost, {
       ...args,
       canonicalUrl,
       firecrawlStatus: scraped.ok ? "succeeded" : "failed",
       firecrawlVisitedAt: visitedAt,
       firecrawlPageContent: scraped.ok ? scraped.content : null,
-      firecrawlPageSummary: scraped.ok ? scraped.summary : null,
+      firecrawlPageSummary:
+        generated.ok ? generated.abstract : scraped.ok ? scraped.summary : null,
       firecrawlError: scraped.ok ? null : scraped.error,
+      abstractStatus: generated.ok ? "succeeded" : "failed",
+      abstractError: generated.ok ? null : generated.error,
       headerImageUrl: null,
     });
+
+    if (args.feedImportRunId !== undefined && args.feedImportRunId !== null) {
+      await ctx.runMutation(internal.feedImports.recordPostProcessed, {
+        feedImportRunId: args.feedImportRunId,
+        ok: scraped.ok && generated.ok,
+      });
+    }
+
+    return result;
   },
 });

@@ -306,6 +306,33 @@ export const listRunPosts = query({
   },
 });
 
+export const retryPost = action({
+  args: {
+    postId: v.id("posts"),
+  },
+  handler: async (ctx, args) => {
+    const retryArgs: {
+      feedId: Id<"feeds"> | null;
+      readerId: Id<"readers">;
+      sourceTitle: string;
+      sourceSiteUrl: string | null;
+      sourceFeedUrl: string | null;
+      rssTitle: string;
+      rssDescription: string | null;
+      rssLinkUrl: string;
+      publishedAt: number | null;
+      discoveredAt: number;
+    } = await ctx.runMutation(internal.feedImports.preparePostRetry, {
+      postId: args.postId,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.firecrawlPosts.ingestRssEntry, {
+      ...retryArgs,
+      feedImportRunId: null,
+    });
+  },
+});
+
 export const prepareInitialImport = internalMutation({
   args: {
     submittedFeedUrl: v.string(),
@@ -380,6 +407,57 @@ export const prepareInitialImport = internalMutation({
     });
 
     return { readerId: reader._id, feedId, feedImportRunId };
+  },
+});
+
+export const preparePostRetry = internalMutation({
+  args: {
+    postId: v.id("posts"),
+  },
+  handler: async (ctx, args) => {
+    const reader = await requireCurrentReader(ctx);
+    const post = await ctx.db.get(args.postId);
+    if (post === null) {
+      throw new ConvexError("Post not found");
+    }
+
+    if (post.feedImportRunId === null || post.feedImportRunId === undefined) {
+      throw new ConvexError("Post is not part of an Initial Import");
+    }
+
+    const run = await ctx.db.get(post.feedImportRunId);
+    if (run === null || run.readerId !== reader._id) {
+      throw new ConvexError("Post not found");
+    }
+
+    await ctx.db.patch(post._id, {
+      firecrawlStatus: "pending",
+      firecrawlVisitedAt: null,
+      firecrawlPageContent: null,
+      firecrawlPageSummary: null,
+      firecrawlError: null,
+      abstractStatus: "pending",
+      abstractError: null,
+      abstract: post.rssDescription,
+      abstractSource:
+        post.rssDescription !== null && post.rssDescription.trim() !== ""
+          ? "rss_description_fallback"
+          : "none",
+      updatedAt: Date.now(),
+    });
+
+    return {
+      feedId: post.feedId ?? null,
+      readerId: reader._id,
+      sourceTitle: post.sourceTitle,
+      sourceSiteUrl: post.sourceSiteUrl,
+      sourceFeedUrl: post.sourceFeedUrl,
+      rssTitle: post.rssTitle,
+      rssDescription: post.rssDescription,
+      rssLinkUrl: post.rssLinkUrl,
+      publishedAt: post.publishedAt,
+      discoveredAt: post.discoveredAt,
+    };
   },
 });
 
