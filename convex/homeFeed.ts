@@ -293,6 +293,7 @@ export const getProcessingState = internalQuery({
       firecrawlVisitedAt: post.firecrawlVisitedAt,
       firecrawlPageContent: post.firecrawlPageContent,
       firecrawlPageSummary: post.firecrawlPageSummary,
+      headerImageUrl: post.headerImageUrl,
     };
   },
 });

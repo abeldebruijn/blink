@@ -16,6 +16,7 @@ type FeedEntry = {
   title: string;
   linkUrl: string;
   description: string | null;
+  imageUrl: string | null;
   publishedAt: number | null;
 };
 
@@ -62,6 +63,92 @@ function textValue(value: unknown): string | null {
 function attrValue(value: unknown, attrName: string) {
   const record = asRecord(value);
   return record === null ? null : textValue(record[`@_${attrName}`]);
+}
+
+function validImageUrl(value: string | null, baseUrl: string) {
+  if (value === null) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value, baseUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function firstHtmlImageUrl(html: string | null, baseUrl: string) {
+  if (html === null) {
+    return null;
+  }
+
+  const imgMatch = html.match(/<img\b[^>]*>/i);
+  if (imgMatch === null) {
+    return null;
+  }
+
+  const attributes = imgMatch[0];
+  const src =
+    attributes.match(
+      /\s(?:src|data-src|data-original)\s*=\s*["']([^"']+)["']/i,
+    )?.[1] ??
+    attributes
+      .match(/\ssrcset\s*=\s*["']([^"']+)["']/i)?.[1]
+      ?.split(",")[0]
+      ?.trim()
+      .split(/\s+/)[0] ??
+    null;
+
+  return validImageUrl(src ?? null, baseUrl);
+}
+
+function imageFromEmbeddedImg(value: unknown, baseUrl: string) {
+  const record = asRecord(value);
+  if (record === null) {
+    return null;
+  }
+
+  for (const image of asArray(record.img)) {
+    const src =
+      attrValue(image, "src") ??
+      attrValue(image, "data-src") ??
+      attrValue(image, "data-original") ??
+      attrValue(image, "srcset")?.split(",")[0]?.trim().split(/\s+/)[0] ??
+      null;
+    const url = validImageUrl(src, baseUrl);
+    if (url !== null) {
+      return url;
+    }
+  }
+
+  return null;
+}
+
+function imageFromRssMedia(item: Record<string, unknown>, baseUrl: string) {
+  const candidates = [
+    ...asArray(item["media:content"]).map((value) => attrValue(value, "url")),
+    ...asArray(item["media:thumbnail"]).map((value) => attrValue(value, "url")),
+    ...asArray(item.enclosure).map((value) => {
+      const type = attrValue(value, "type");
+      return type?.startsWith("image/") ? attrValue(value, "url") : null;
+    }),
+    attrValue(item["itunes:image"], "href"),
+    textValue(item.image),
+  ];
+
+  for (const candidate of candidates) {
+    const url = validImageUrl(candidate, baseUrl);
+    if (url !== null) {
+      return url;
+    }
+  }
+
+  return null;
 }
 
 function rssLink(item: Record<string, unknown>) {
@@ -115,7 +202,14 @@ function parseFeed(xml: string, canonicalFeedUrl: string) {
           title: textValue(record.title) ?? linkUrl,
           linkUrl,
           description:
-            textValue(record.description) ?? textValue(record["content:encoded"]),
+            textValue(record.description) ??
+            textValue(record["content:encoded"]),
+          imageUrl:
+            imageFromRssMedia(record, linkUrl) ??
+            imageFromEmbeddedImg(record.description, linkUrl) ??
+            imageFromEmbeddedImg(record["content:encoded"], linkUrl) ??
+            firstHtmlImageUrl(textValue(record.description), linkUrl) ??
+            firstHtmlImageUrl(textValue(record["content:encoded"]), linkUrl),
           publishedAt: timestamp(
             textValue(record.pubDate) ?? textValue(record["dc:date"]),
           ),
@@ -146,6 +240,12 @@ function parseFeed(xml: string, canonicalFeedUrl: string) {
           title: textValue(record.title) ?? linkUrl,
           linkUrl,
           description: textValue(record.summary) ?? textValue(record.content),
+          imageUrl:
+            imageFromRssMedia(record, linkUrl) ??
+            imageFromEmbeddedImg(record.summary, linkUrl) ??
+            imageFromEmbeddedImg(record.content, linkUrl) ??
+            firstHtmlImageUrl(textValue(record.summary), linkUrl) ??
+            firstHtmlImageUrl(textValue(record.content), linkUrl),
           publishedAt: timestamp(
             textValue(record.published) ?? textValue(record.updated),
           ),
@@ -161,7 +261,9 @@ function parseFeed(xml: string, canonicalFeedUrl: string) {
     };
   }
 
-  throw new ConvexError("Submitted Feed URL must point directly to RSS or Atom");
+  throw new ConvexError(
+    "Submitted Feed URL must point directly to RSS or Atom",
+  );
 }
 
 async function requireCurrentReader(ctx: QueryCtx | MutationCtx) {
@@ -188,7 +290,10 @@ export const startInitialImport = action({
   args: {
     submittedFeedUrl: v.string(),
   },
-  handler: async (ctx, args): Promise<{ feedImportRunId: Id<"feedImportRuns"> }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ feedImportRunId: Id<"feedImportRuns"> }> => {
     await ctx.runMutation(api.readers.ensureCurrent, {});
     const submittedFeedUrl = normalizeUrl(args.submittedFeedUrl);
     const response = await fetch(submittedFeedUrl, {
@@ -240,6 +345,7 @@ export const startInitialImport = action({
         rssLinkUrl: entry.linkUrl,
         publishedAt: entry.publishedAt,
         discoveredAt,
+        rssImageUrl: entry.imageUrl,
       });
     }
 
@@ -322,6 +428,7 @@ export const retryPost = action({
       rssLinkUrl: string;
       publishedAt: number | null;
       discoveredAt: number;
+      rssImageUrl: string | null;
     } = await ctx.runMutation(internal.feedImports.preparePostRetry, {
       postId: args.postId,
     });
@@ -457,6 +564,7 @@ export const preparePostRetry = internalMutation({
       rssLinkUrl: post.rssLinkUrl,
       publishedAt: post.publishedAt,
       discoveredAt: post.discoveredAt,
+      rssImageUrl: post.headerImageUrl,
     };
   },
 });

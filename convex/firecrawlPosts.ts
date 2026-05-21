@@ -21,6 +21,9 @@ type FirecrawlScrapeResponse = {
       sourceURL?: string;
       statusCode?: number;
       error?: string;
+      ogImage?: string;
+      twitterImage?: string;
+      image?: string;
     };
   };
   error?: string;
@@ -42,7 +45,35 @@ function trimmedOrNull(value: string | null) {
 }
 
 function truncate(value: string, maxLength: number) {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+  return value.length > maxLength
+    ? `${value.slice(0, maxLength - 3)}...`
+    : value;
+}
+
+function validImageUrl(value: string | null, baseUrl: string) {
+  if (value === null) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value, baseUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function firstMarkdownImageUrl(markdown: string | null, baseUrl: string) {
+  if (markdown === null) {
+    return null;
+  }
+
+  const imageMatch = markdown.match(/!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/);
+  return validImageUrl(imageMatch?.[1] ?? null, baseUrl);
 }
 
 function firstMeaningfulParagraph(markdown: string) {
@@ -116,7 +147,9 @@ async function scrapeWithFirecrawl(canonicalUrl: string) {
     }),
   });
 
-  const payload = (await response.json().catch(() => ({}))) as FirecrawlScrapeResponse;
+  const payload = (await response
+    .json()
+    .catch(() => ({}))) as FirecrawlScrapeResponse;
   if (!response.ok || payload.success === false) {
     return {
       ok: false as const,
@@ -139,10 +172,16 @@ async function scrapeWithFirecrawl(canonicalUrl: string) {
     };
   }
 
+  const metadataImage =
+    validImageUrl(payload.data?.metadata?.ogImage ?? null, canonicalUrl) ??
+    validImageUrl(payload.data?.metadata?.twitterImage ?? null, canonicalUrl) ??
+    validImageUrl(payload.data?.metadata?.image ?? null, canonicalUrl);
+
   return {
     ok: true as const,
     content: truncate(content, maxStoredContentLength),
     summary: summarizeMarkdown(content),
+    imageUrl: metadataImage ?? firstMarkdownImageUrl(content, canonicalUrl),
   };
 }
 
@@ -159,6 +198,7 @@ export const ingestRssEntry = internalAction({
     rssLinkUrl: v.string(),
     publishedAt: v.union(v.number(), v.null()),
     discoveredAt: v.number(),
+    rssImageUrl: v.union(v.string(), v.null()),
   },
   handler: async (
     ctx,
@@ -170,6 +210,7 @@ export const ingestRssEntry = internalAction({
       firecrawlVisitedAt: number | null;
       firecrawlPageContent: string | null;
       firecrawlPageSummary: string | null;
+      headerImageUrl: string | null;
     } | null = await ctx.runQuery(internal.homeFeed.getProcessingState, {
       canonicalUrl,
     });
@@ -178,8 +219,10 @@ export const ingestRssEntry = internalAction({
       existing?.firecrawlStatus === "succeeded" &&
       existing.firecrawlVisitedAt !== null
     ) {
-      const result: { postId: Id<"posts">; homeFeedItemId: Id<"homeFeedItems"> } =
-        await ctx.runMutation(internal.homeFeed.upsertPost, {
+      const result: {
+        postId: Id<"posts">;
+        homeFeedItemId: Id<"homeFeedItems">;
+      } = await ctx.runMutation(internal.homeFeed.upsertPost, {
         ...args,
         canonicalUrl,
         firecrawlStatus: "succeeded",
@@ -193,7 +236,7 @@ export const ingestRssEntry = internalAction({
           existing.firecrawlPageSummary !== null
             ? null
             : "Existing Post has no Abstract",
-        headerImageUrl: null,
+        headerImageUrl: args.rssImageUrl ?? existing.headerImageUrl,
       });
       if (args.feedImportRunId !== undefined && args.feedImportRunId !== null) {
         await ctx.runMutation(internal.feedImports.recordPostProcessed, {
@@ -214,7 +257,7 @@ export const ingestRssEntry = internalAction({
       firecrawlError: null,
       abstractStatus: "pending",
       abstractError: null,
-      headerImageUrl: null,
+      headerImageUrl: args.rssImageUrl,
     });
 
     const scraped = await scrapeWithFirecrawl(canonicalUrl).catch((error) => ({
@@ -238,18 +281,22 @@ export const ingestRssEntry = internalAction({
 
     const result: { postId: Id<"posts">; homeFeedItemId: Id<"homeFeedItems"> } =
       await ctx.runMutation(internal.homeFeed.upsertPost, {
-      ...args,
-      canonicalUrl,
-      firecrawlStatus: scraped.ok ? "succeeded" : "failed",
-      firecrawlVisitedAt: visitedAt,
-      firecrawlPageContent: scraped.ok ? scraped.content : null,
-      firecrawlPageSummary:
-        generated.ok ? generated.abstract : scraped.ok ? scraped.summary : null,
-      firecrawlError: scraped.ok ? null : scraped.error,
-      abstractStatus: generated.ok ? "succeeded" : "failed",
-      abstractError: generated.ok ? null : generated.error,
-      headerImageUrl: null,
-    });
+        ...args,
+        canonicalUrl,
+        firecrawlStatus: scraped.ok ? "succeeded" : "failed",
+        firecrawlVisitedAt: visitedAt,
+        firecrawlPageContent: scraped.ok ? scraped.content : null,
+        firecrawlPageSummary: generated.ok
+          ? generated.abstract
+          : scraped.ok
+            ? scraped.summary
+            : null,
+        firecrawlError: scraped.ok ? null : scraped.error,
+        abstractStatus: generated.ok ? "succeeded" : "failed",
+        abstractError: generated.ok ? null : generated.error,
+        headerImageUrl:
+          args.rssImageUrl ?? (scraped.ok ? scraped.imageUrl : null),
+      });
 
     if (args.feedImportRunId !== undefined && args.feedImportRunId !== null) {
       await ctx.runMutation(internal.feedImports.recordPostProcessed, {
