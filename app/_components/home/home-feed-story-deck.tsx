@@ -6,6 +6,7 @@ import { useMutation } from "convex/react";
 import { Bookmark, ChevronDown, ChevronUp, Heart, ThumbsDown } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { filterHomeFeedItems, parseFeedFilter } from "./feed-utils";
+import { FeedFilterPopover } from "./feed-filter-popover";
 import { FilteredHomeFeedEmpty } from "./filtered-home-feed-empty";
 import { HomeFeedStoryCard } from "./home-feed-story-card";
 import { StoryActionButton } from "./story-action-button";
@@ -14,9 +15,8 @@ import type { HomeFeedFilter, HomeFeedItems } from "./types";
 export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
   const containerRef = useRef<HTMLElement | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [openPopoverId, setOpenPopoverId] = useState<number | "empty" | null>(
-    null,
-  );
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const isProgrammaticScrolling = useRef(false);
   const markRead = useMutation(api.homeFeed.markRead);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -35,11 +35,29 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
 
   function scrollToPost(index: number) {
     const container = containerRef.current;
-    setActiveIndex(index);
-    const post = container?.querySelector<HTMLElement>(
-      `[data-home-feed-index="${index}"]`,
+    if (container === null) {
+      return;
+    }
+    const nextIndex = Math.max(0, Math.min(visibleItems.length - 1, index));
+    const target = container.querySelector<HTMLElement>(
+      `[data-home-feed-index="${nextIndex}"]`,
     );
-    post?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveIndex(nextIndex);
+    isProgrammaticScrolling.current = true;
+    if (nextIndex === 0 || target === null) {
+      container.scrollTo({ top: 0, behavior: "auto" });
+    } else {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    setTimeout(() => {
+      isProgrammaticScrolling.current = false;
+      const settledIndex = Math.round(
+        container.scrollTop / container.clientHeight,
+      );
+      setActiveIndex(
+        Math.max(0, Math.min(visibleItems.length - 1, settledIndex)),
+      );
+    }, 500);
   }
 
   useEffect(() => {
@@ -59,6 +77,9 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
     }
 
     function onScroll() {
+      if (isProgrammaticScrolling.current) {
+        return;
+      }
       if (animationFrame === 0) {
         animationFrame = requestAnimationFrame(updateActiveIndex);
       }
@@ -78,7 +99,7 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
     params.set("feed", feed);
     setActiveIndex(0);
     router.push(`/?${params.toString()}`);
-    setOpenPopoverId(null);
+    setPopoverOpen(false);
   }
 
   return (
@@ -87,16 +108,25 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
       aria-label="Home Feed Posts"
       className="relative h-screen snap-y snap-mandatory overflow-y-auto bg-[#101418] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
+      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[680px] z-50 flex items-center justify-between p-5 bg-[#101418]/60 backdrop-blur-md border-b border-white/5">
+        <div>
+          <h1 className="text-3xl font-black italic leading-none text-white">Blink</h1>
+        </div>
+        <FeedFilterPopover
+          selectedFeed={selectedFeed}
+          position={visibleItems.length === 0 ? 0 : activeIndex + 1}
+          total={visibleItems.length === 0 ? counts[selectedFeed] : visibleItems.length}
+          counts={counts}
+          open={popoverOpen}
+          onOpenChange={setPopoverOpen}
+          onSelectFeed={selectFeed}
+        />
+      </header>
+
       {visibleItems.length === 0 ? (
         <FilteredHomeFeedEmpty
           selectedFeed={selectedFeed}
           totalCount={items.length}
-          counts={counts}
-          popoverOpen={openPopoverId === "empty"}
-          onPopoverOpenChange={(open) =>
-            setOpenPopoverId(open ? "empty" : null)
-          }
-          onSelectFeed={selectFeed}
         />
       ) : null}
       {visibleItems.map((item, index) => (
@@ -104,13 +134,6 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
           key={item._id}
           item={item}
           index={index}
-          position={index + 1}
-          total={visibleItems.length}
-          selectedFeed={selectedFeed}
-          counts={counts}
-          popoverOpen={openPopoverId === index}
-          onPopoverOpenChange={(open) => setOpenPopoverId(open ? index : null)}
-          onSelectFeed={selectFeed}
           onMarkRead={(homeFeedItemId) =>
             markRead({ homeFeedItemId, read: true })
           }

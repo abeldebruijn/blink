@@ -1,30 +1,15 @@
 import Link from "next/link";
 import { Clock, ExternalLink, ImageOff } from "lucide-react";
-import { FeedFilterPopover } from "./feed-filter-popover";
 import { postTimingLabel, siteHost } from "./feed-utils";
-import type { HomeFeedFilter, HomeFeedItem } from "./types";
+import type { HomeFeedItem } from "./types";
 
 export function HomeFeedStoryCard({
   item,
   index,
-  position,
-  total,
-  selectedFeed,
-  counts,
-  popoverOpen,
-  onPopoverOpenChange,
-  onSelectFeed,
   onMarkRead,
 }: {
   item: HomeFeedItem;
   index: number;
-  position: number;
-  total: number;
-  selectedFeed: HomeFeedFilter;
-  counts: Record<HomeFeedFilter, number>;
-  popoverOpen: boolean;
-  onPopoverOpenChange: (open: boolean) => void;
-  onSelectFeed: (feed: HomeFeedFilter) => void;
   onMarkRead: (homeFeedItemId: HomeFeedItem["_id"]) => Promise<unknown>;
 }) {
   const hasImage = item.headerImageUrl !== null && item.headerImageUrl !== "";
@@ -48,20 +33,6 @@ export function HomeFeedStoryCard({
       <div className="absolute inset-0 bg-linear-to-b from-black/20 via-black/20 to-black/84" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.14),transparent_28%),linear-gradient(90deg,rgba(0,0,0,0.46),transparent_46%)]" />
 
-      <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between p-5">
-        <div>
-          <h1 className="text-3xl font-black italic leading-none">Blink</h1>
-        </div>
-        <FeedFilterPopover
-          selectedFeed={selectedFeed}
-          position={position}
-          total={total}
-          counts={counts}
-          open={popoverOpen}
-          onOpenChange={onPopoverOpenChange}
-          onSelectFeed={onSelectFeed}
-        />
-      </header>
 
       <div className="relative z-10 grid h-dvh content-end gap-3 overflow-hidden px-5 pb-[calc(env(safe-area-inset-bottom)+7.25rem)] pr-24 pt-24 sm:gap-4 sm:pb-36">
         {hasImage ? (
