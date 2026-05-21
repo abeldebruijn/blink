@@ -144,7 +144,7 @@ function parseMarkdownBlocks(markdown: string) {
 function renderInline(text: string, baseUrl?: string) {
   const nodes: ReactNode[] = [];
   const pattern =
-    /(\[\s*!\[[^\]]*\]\s*\([^)]+\)\s*\]\s*\([^)]+\)|!?\[[^\]]*\]\s*\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+    /(\[\s*!\[[^\]]*\]\s*\([^)]+\)\s*\]\s*\([^)]+\)|!?\[[^\]]*\]\s*\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
 
@@ -220,9 +220,9 @@ function renderInline(text: string, baseUrl?: string) {
           {token.slice(1, -1)}
         </code>,
       );
-    } else if (token.startsWith("**")) {
+    } else if (token.startsWith("**") || token.startsWith("__")) {
       nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>);
-    } else if (token.startsWith("*")) {
+    } else if (token.startsWith("*") || token.startsWith("_")) {
       nodes.push(<em key={key}>{token.slice(1, -1)}</em>);
     } else if (token.startsWith("![")) {
       // Markdown Image
