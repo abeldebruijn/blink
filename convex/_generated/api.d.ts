@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as homeFeed from "../homeFeed.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as readers from "../readers.js";
 
@@ -18,6 +19,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  homeFeed: typeof homeFeed;
   myFunctions: typeof myFunctions;
   readers: typeof readers;
 }>;

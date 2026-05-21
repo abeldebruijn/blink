@@ -1,22 +1,21 @@
 "use client";
 
 import Image from "next/image";
-import {
-  SignInButton,
-  SignUpButton,
-  UserButton,
-  useUser,
-} from "@clerk/nextjs";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
+import { useMutation, useQuery } from "convex/react";
 import {
   Bookmark,
   ChevronDown,
   Heart,
-  HomeIcon,
-  Search,
-  Sparkles,
+  Loader2,
+  Plus,
+  Rss,
   ThumbsDown,
-  UserRound,
 } from "lucide-react";
+import { api } from "@/convex/_generated/api";
+import { BottomNav } from "./_components/bottom-nav";
 
 const previewPosts = [
   {
@@ -57,7 +56,63 @@ const previewPosts = [
 const activePost = previewPosts[0];
 
 export default function Home() {
-  const { isSignedIn } = useUser();
+  const { isLoaded, isSignedIn, user } = useUser();
+  const ensureCurrentReader = useMutation(api.readers.ensureCurrent);
+  const [ensuredUserId, setEnsuredUserId] = useState<string | null>(null);
+  const [readerErrorUserId, setReaderErrorUserId] = useState<string | null>(
+    null,
+  );
+  const userId = user?.id;
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || userId === undefined) {
+      return;
+    }
+
+    let cancelled = false;
+    void ensureCurrentReader({})
+      .then(() => {
+        if (!cancelled) {
+          setEnsuredUserId(userId);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReaderErrorUserId(userId);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureCurrentReader, isLoaded, isSignedIn, userId]);
+
+  const readerReady = isSignedIn === true && ensuredUserId === userId;
+  const readerError = isSignedIn === true && readerErrorUserId === userId;
+
+  const homeFeed = useQuery(
+    api.homeFeed.list,
+    isSignedIn && readerReady ? { limit: 20 } : "skip",
+  );
+
+  if (!isLoaded) {
+    return (
+      <main
+        className="min-h-screen bg-[#101418]"
+        style={{ fontFamily: "var(--font-hanken-grotesk), sans-serif" }}
+      />
+    );
+  }
+
+  if (isLoaded && isSignedIn) {
+    return (
+      <AuthenticatedHomeFeed
+        homeFeed={homeFeed}
+        readerReady={readerReady}
+        readerError={readerError}
+      />
+    );
+  }
 
   return (
     <main
@@ -78,9 +133,6 @@ export default function Home() {
 
         <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-5 py-5">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/68">
-              Signed-out preview
-            </p>
             <h1 className="text-3xl font-black italic leading-none">Blink</h1>
           </div>
           <div className="flex items-center gap-2">
@@ -103,13 +155,6 @@ export default function Home() {
           </div>
         </header>
 
-        <div className="absolute left-5 right-20 top-28 z-10">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/14 px-3 py-1.5 text-xs font-bold text-white backdrop-blur">
-            <Sparkles className="size-3.5" />
-            Story feed preview
-          </div>
-        </div>
-
         <article className="absolute bottom-32 left-0 right-20 z-10 grid gap-4 p-5">
           <div className="flex flex-wrap gap-2">
             {activePost.tags.map((tag) => (
@@ -121,7 +166,7 @@ export default function Home() {
               </span>
             ))}
           </div>
-          <h2 className="max-w-[10ch] text-[38px] font-black leading-none tracking-normal sm:max-w-[12ch] sm:text-[44px]">
+          <h2 className="max-w-[12ch] text-[32px] font-black leading-none tracking-normal sm:text-[38px]">
             {activePost.title}
           </h2>
           <p className="text-sm font-semibold text-white/80">
@@ -148,18 +193,89 @@ export default function Home() {
           <PreviewAction label="Tune down" icon={<ThumbsDown />} />
           <PreviewAction label="Next" icon={<ChevronDown />} />
         </div>
+      </section>
+    </main>
+  );
+}
 
-        <div className="absolute inset-x-0 bottom-0 z-20 px-4 pb-4">
-          <nav
-            aria-label="Preview navigation"
-            className="mx-auto flex h-[58px] max-w-[360px] items-center justify-around rounded-full border border-white/10 bg-[#11161a]/88 px-4 shadow-[0_18px_42px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.14)] backdrop-blur-2xl"
-          >
-            <NavIcon label="Home" active icon={<HomeIcon />} />
-            <NavIcon label="Saved" icon={<Bookmark />} />
-            <NavIcon label="Search" icon={<Search />} />
-            <NavIcon label="Profile" icon={<UserRound />} />
-          </nav>
+function AuthenticatedHomeFeed({
+  homeFeed,
+  readerReady,
+  readerError,
+}: {
+  homeFeed: readonly unknown[] | undefined;
+  readerReady: boolean;
+  readerError: boolean;
+}) {
+  const isLoading = !readerError && (!readerReady || homeFeed === undefined);
+  const hasPosts = (homeFeed?.length ?? 0) > 0;
+
+  return (
+    <main
+      className="min-h-screen bg-[#f7f3ec] text-[#171717]"
+      style={{ fontFamily: "var(--font-hanken-grotesk), sans-serif" }}
+    >
+      <section className="mx-auto flex min-h-screen w-full max-w-[680px] flex-col px-5 py-5">
+        <header className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-black italic leading-none">Blink</h1>
+          </div>
+        </header>
+
+        <div className="flex flex-1 items-center justify-center py-14">
+          {isLoading ? (
+            <div className="grid justify-items-center gap-3 text-[#6f675d]">
+              <Loader2 className="size-6 animate-spin" aria-hidden="true" />
+              <p className="text-sm font-bold">Loading Home Feed</p>
+            </div>
+          ) : readerError ? (
+            <div className="grid max-w-[27rem] justify-items-center gap-3 text-center">
+              <div className="grid size-16 place-items-center rounded-full bg-[#171717] text-white">
+                <Rss className="size-7" aria-hidden="true" />
+              </div>
+              <h2 className="text-3xl font-black leading-none tracking-normal">
+                Home Feed unavailable
+              </h2>
+              <p className="text-base leading-7 text-[#5d554b]">
+                Blink could not prepare this Reader&apos;s Home Feed.
+              </p>
+            </div>
+          ) : hasPosts ? null : (
+            <section
+              aria-labelledby="empty-home-feed-title"
+              className="grid w-full justify-items-center gap-5 text-center"
+            >
+              <div className="grid size-16 place-items-center rounded-full bg-[#171717] text-white">
+                <Rss className="size-7" aria-hidden="true" />
+              </div>
+              <div className="grid max-w-[27rem] gap-3">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#8a3d16]">
+                  Empty Home Feed
+                </p>
+                <h2
+                  id="empty-home-feed-title"
+                  className="text-4xl font-black leading-none tracking-normal"
+                >
+                  No Posts yet
+                </h2>
+                <p className="text-base leading-7 text-[#5d554b]">
+                  This Reader has no Home Feed Items because there are no Feed
+                  Subscriptions yet. Add a Feed to start receiving Posts in the
+                  Home Feed.
+                </p>
+              </div>
+              <Link
+                href="/feeds/new"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-[#171717] px-5 text-sm font-black text-white transition hover:bg-[#2a2a2a] focus:outline-none focus:ring-2 focus:ring-[#171717] focus:ring-offset-2 focus:ring-offset-[#f7f3ec]"
+              >
+                <Plus className="size-4" aria-hidden="true" />
+                Add Feed
+              </Link>
+            </section>
+          )}
         </div>
+
+        <BottomNav variant="light" />
       </section>
     </main>
   );
@@ -180,29 +296,6 @@ function PreviewAction({
       aria-label={label}
       className={`grid size-12 place-items-center rounded-full backdrop-blur transition active:scale-95 [&>svg]:size-5 ${
         active ? "bg-[#ff004f] text-white" : "bg-white/14 text-white"
-      }`}
-    >
-      {icon}
-    </button>
-  );
-}
-
-function NavIcon({
-  label,
-  icon,
-  active = false,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  active?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-current={active ? "page" : undefined}
-      className={`grid size-[50px] place-items-center rounded-full text-white transition active:scale-95 [&>svg]:size-7 [&>svg]:stroke-[2.65] ${
-        active ? "bg-white/18" : "hover:bg-white/10"
       }`}
     >
       {icon}
