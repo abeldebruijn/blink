@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Loader2, Plus, Rss } from "lucide-react";
+import { Plus, Rss } from "lucide-react";
 import { BottomNav } from "../bottom-nav";
 import { HomeFeedStoryDeck } from "./home-feed-story-deck";
 import type { HomeFeedItems } from "./types";
@@ -15,20 +15,21 @@ export function AuthenticatedHomeFeed({
 }) {
   const isLoading = !readerError && (!readerReady || homeFeed === undefined);
   const hasPosts = (homeFeed?.length ?? 0) > 0;
+  const useFeedTheme = isLoading || hasPosts;
 
   return (
     <main
       className={`min-h-screen ${
-        hasPosts ? "bg-[#101418] text-white" : "bg-[#f7f3ec] text-[#171717]"
+        useFeedTheme ? "bg-[#101418] text-white" : "bg-[#f7f3ec] text-[#171717]"
       }`}
       style={{ fontFamily: "var(--font-hanken-grotesk), sans-serif" }}
     >
       <section
         className={`mx-auto flex min-h-screen w-full max-w-[680px] flex-col ${
-          hasPosts ? "bg-[#101418]" : "px-5 pb-28 pt-5"
+          useFeedTheme ? "bg-[#101418]" : "px-5 pb-28 pt-5"
         }`}
       >
-        {!hasPosts ? (
+        {!useFeedTheme ? (
           <header className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-black italic leading-none">Blink</h1>
@@ -38,16 +39,13 @@ export function AuthenticatedHomeFeed({
 
         <div
           className={
-            hasPosts
+            useFeedTheme
               ? "min-h-screen flex-1"
               : "flex flex-1 items-center justify-center py-14"
           }
         >
           {isLoading ? (
-            <div className="grid justify-items-center gap-3 text-[#6f675d]">
-              <Loader2 className="size-6 animate-spin" aria-hidden="true" />
-              <p className="text-sm font-bold">Loading Home Feed</p>
-            </div>
+            <HomeFeedLoadingSkeleton />
           ) : readerError ? (
             <div className="grid max-w-[27rem] justify-items-center gap-3 text-center">
               <div className="grid size-16 place-items-center rounded-full bg-[#171717] text-white">
@@ -97,8 +95,50 @@ export function AuthenticatedHomeFeed({
           )}
         </div>
 
-        <BottomNav variant={hasPosts ? "dark" : "light"} />
+        <BottomNav variant={useFeedTheme ? "dark" : "light"} />
       </section>
     </main>
+  );
+}
+
+function HomeFeedLoadingSkeleton() {
+  return (
+    <section
+      aria-label="Loading Home Feed"
+      className="relative h-screen overflow-hidden bg-[#101418]"
+    >
+      <div className="absolute inset-0 bg-[linear-gradient(145deg,#22312d_0%,#171717_48%,#4b3327_100%)]" />
+      <div className="absolute inset-0 bg-linear-to-b from-black/16 via-black/20 to-black/84" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.14),transparent_28%),linear-gradient(90deg,rgba(0,0,0,0.46),transparent_46%)]" />
+
+      <header className="fixed left-1/2 top-0 z-50 flex w-full max-w-[680px] -translate-x-1/2 items-center justify-between border-b border-white/5 bg-[#101418]/60 p-5 backdrop-blur-md">
+        <h1 className="text-3xl font-black italic leading-none text-white">
+          Blink
+        </h1>
+        <div className="h-9 w-28 animate-pulse rounded-full bg-white/14" />
+      </header>
+
+      <div className="relative z-10 grid h-dvh content-end gap-4 px-5 pb-[calc(env(safe-area-inset-bottom)+7.25rem)] pr-24 pt-24 sm:pb-36">
+        <div className="h-[clamp(10rem,30vh,22rem)] animate-pulse rounded-[18px] border border-white/12 bg-white/12 shadow-2xl shadow-black/30" />
+        <div className="flex gap-2">
+          <div className="h-6 w-24 animate-pulse rounded-full bg-white/16" />
+          <div className="h-6 w-16 animate-pulse rounded-full bg-white/16" />
+        </div>
+        <div className="grid gap-3">
+          <div className="h-9 w-11/12 animate-pulse rounded-[8px] bg-white/18" />
+          <div className="h-9 w-7/12 animate-pulse rounded-[8px] bg-white/18" />
+          <div className="h-4 w-44 animate-pulse rounded-full bg-white/14" />
+        </div>
+        <div className="grid gap-2">
+          <div className="h-3 w-full animate-pulse rounded-full bg-white/12" />
+          <div className="h-3 w-10/12 animate-pulse rounded-full bg-white/12" />
+          <div className="h-3 w-8/12 animate-pulse rounded-full bg-white/12" />
+        </div>
+        <div className="flex gap-3 pt-1">
+          <div className="h-11 w-20 animate-pulse rounded-full bg-white/90" />
+          <div className="h-11 w-24 animate-pulse rounded-full bg-white/14" />
+        </div>
+      </div>
+    </section>
   );
 }
