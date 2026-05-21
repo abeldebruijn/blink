@@ -100,7 +100,7 @@ export function HomeFeedStoryCard({
           </p>
         </div>
         <AbstractText item={item} />
-        <div className="flex items-center gap-3 pt-1">
+        <div className="flex flex-wrap items-center gap-3 pt-1">
           <Link
             href={href}
             onClick={() => {
@@ -109,7 +109,6 @@ export function HomeFeedStoryCard({
             className="inline-flex h-11 items-center gap-2 rounded-full bg-white px-4 text-sm font-black text-[#171717] transition hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-[#171717]"
           >
             Read
-            <ExternalLink className="size-4" aria-hidden="true" />
           </Link>
           <a
             href={item.canonicalUrl}
@@ -118,10 +117,22 @@ export function HomeFeedStoryCard({
             onClick={() => {
               void onMarkRead(item._id);
             }}
-            className="inline-flex h-11 items-center rounded-full bg-white/14 px-4 text-sm font-black text-white backdrop-blur transition hover:bg-white/22"
+            className="inline-flex h-11 items-center gap-2 rounded-full bg-white/14 px-4 text-sm font-black text-white backdrop-blur transition hover:bg-white/22"
           >
             Source
+            <ExternalLink className="size-4" aria-hidden="true" />
           </a>
+          {!item.isRead ? (
+            <button
+              type="button"
+              onClick={() => {
+                void onMarkRead(item._id);
+              }}
+              className="inline-flex h-11 items-center rounded-full bg-white/14 px-4 text-sm font-black text-white backdrop-blur transition hover:bg-white/22"
+            >
+              Mark as read
+            </button>
+          ) : null}
         </div>
       </div>
     </article>

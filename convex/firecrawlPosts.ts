@@ -204,6 +204,7 @@ export const ingestRssEntry = internalAction({
     ctx,
     args,
   ): Promise<{ postId: Id<"posts">; homeFeedItemId: Id<"homeFeedItems"> }> => {
+    const { rssImageUrl, ...restArgs } = args;
     const canonicalUrl = normalizedUrl(args.rssLinkUrl);
     const existing: {
       firecrawlStatus: "pending" | "succeeded" | "failed" | null;
@@ -223,7 +224,7 @@ export const ingestRssEntry = internalAction({
         postId: Id<"posts">;
         homeFeedItemId: Id<"homeFeedItems">;
       } = await ctx.runMutation(internal.homeFeed.upsertPost, {
-        ...args,
+        ...restArgs,
         canonicalUrl,
         firecrawlStatus: "succeeded",
         firecrawlVisitedAt: existing.firecrawlVisitedAt,
@@ -236,7 +237,7 @@ export const ingestRssEntry = internalAction({
           existing.firecrawlPageSummary !== null
             ? null
             : "Existing Post has no Abstract",
-        headerImageUrl: args.rssImageUrl ?? existing.headerImageUrl,
+        headerImageUrl: rssImageUrl ?? existing.headerImageUrl,
       });
       if (args.feedImportRunId !== undefined && args.feedImportRunId !== null) {
         await ctx.runMutation(internal.feedImports.recordPostProcessed, {
@@ -248,7 +249,7 @@ export const ingestRssEntry = internalAction({
     }
 
     await ctx.runMutation(internal.homeFeed.upsertPost, {
-      ...args,
+      ...restArgs,
       canonicalUrl,
       firecrawlStatus: "pending",
       firecrawlVisitedAt: null,
@@ -257,7 +258,7 @@ export const ingestRssEntry = internalAction({
       firecrawlError: null,
       abstractStatus: "pending",
       abstractError: null,
-      headerImageUrl: args.rssImageUrl,
+      headerImageUrl: rssImageUrl,
     });
 
     const scraped = await scrapeWithFirecrawl(canonicalUrl).catch((error) => ({
@@ -281,7 +282,7 @@ export const ingestRssEntry = internalAction({
 
     const result: { postId: Id<"posts">; homeFeedItemId: Id<"homeFeedItems"> } =
       await ctx.runMutation(internal.homeFeed.upsertPost, {
-        ...args,
+        ...restArgs,
         canonicalUrl,
         firecrawlStatus: scraped.ok ? "succeeded" : "failed",
         firecrawlVisitedAt: visitedAt,
@@ -295,7 +296,7 @@ export const ingestRssEntry = internalAction({
         abstractStatus: generated.ok ? "succeeded" : "failed",
         abstractError: generated.ok ? null : generated.error,
         headerImageUrl:
-          args.rssImageUrl ?? (scraped.ok ? scraped.imageUrl : null),
+          rssImageUrl ?? (scraped.ok ? scraped.imageUrl : null),
       });
 
     if (args.feedImportRunId !== undefined && args.feedImportRunId !== null) {
