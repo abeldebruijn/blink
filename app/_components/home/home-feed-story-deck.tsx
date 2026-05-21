@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import {
   Bookmark,
   ChevronDown,
@@ -24,6 +25,10 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const isProgrammaticScrolling = useRef(false);
   const markRead = useMutation(api.homeFeed.markRead);
+  const feedSubscriptionCount = useQuery(
+    api.feedSubscriptions.countForCurrentReader,
+    {},
+  );
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedFeed = parseFeedFilter(searchParams.get("feed"));
@@ -114,21 +119,34 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
       aria-label="Home Feed Posts"
       className="relative h-screen snap-y snap-mandatory overflow-y-auto bg-[#101418] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
-      <header className="fixed top-0 left-1/2 z-50 flex w-full max-w-[680px] -translate-x-1/2 items-center justify-between border-b border-white/5 bg-[#101418]/60 px-4 py-3 backdrop-blur-md sm:p-5">
+      <header className="fixed top-0 left-1/2 z-50 grid w-full max-w-[680px] -translate-x-1/2 grid-cols-[1fr_auto_1fr] items-center border-b border-white/5 bg-[#101418]/60 px-4 py-3 backdrop-blur-md sm:p-5">
         <div>
           <h1 className="text-2xl font-black italic leading-none text-white sm:text-3xl">
             Blink
           </h1>
         </div>
-        <FeedFilterPopover
-          selectedFeed={selectedFeed}
-          position={visibleItems.length === 0 ? 0 : activeIndex + 1}
-          total={visibleItems.length === 0 ? counts[selectedFeed] : visibleItems.length}
-          counts={counts}
-          open={popoverOpen}
-          onOpenChange={setPopoverOpen}
-          onSelectFeed={selectFeed}
-        />
+        <Link
+          href="/feeds/all"
+          className="max-w-[9.5rem] truncate rounded-full bg-white/14 px-2.5 py-1.5 text-[11px] font-black text-white transition hover:bg-white/20 sm:max-w-none sm:px-3 sm:text-xs"
+        >
+          Subscribed to {feedSubscriptionCount ?? "..."} Feed
+          {feedSubscriptionCount === 1 ? "" : "s"}
+        </Link>
+        <div className="justify-self-end">
+          <FeedFilterPopover
+            selectedFeed={selectedFeed}
+            position={visibleItems.length === 0 ? 0 : activeIndex + 1}
+            total={
+              visibleItems.length === 0
+                ? counts[selectedFeed]
+                : visibleItems.length
+            }
+            counts={counts}
+            open={popoverOpen}
+            onOpenChange={setPopoverOpen}
+            onSelectFeed={selectFeed}
+          />
+        </div>
       </header>
 
       {visibleItems.length === 0 ? (

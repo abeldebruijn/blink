@@ -20,7 +20,7 @@ type FeedEntry = {
   publishedAt: number | null;
 };
 
-function normalizeUrl(value: string) {
+export function normalizeUrl(value: string) {
   try {
     const url = new URL(value);
     if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -174,7 +174,7 @@ function timestamp(value: string | null) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function parseFeed(xml: string, canonicalFeedUrl: string) {
+export function parseFeed(xml: string, canonicalFeedUrl: string) {
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",

@@ -100,6 +100,10 @@ _Avoid_: Backfill, archive crawl
 The future scheduled check that imports newly listed Posts from existing Feeds.
 _Avoid_: Reprocess, backfill
 
+**Manual Refresh**:
+A Reader-triggered check that imports newly listed Posts from one existing Feed Subscription.
+_Avoid_: Resync, reprocess, backfill
+
 ## Relationships
 
 - A **Feed** can have many **Feed Subscriptions**
@@ -163,6 +167,7 @@ _Avoid_: Reprocess, backfill
 - Links inside **Extracted Content** remain clickable and open externally; Blink does not crawl linked pages in v1.
 - **Author Hide** targets the **Post Author** when known, otherwise the **Feed**.
 - **Importing Posts** and **Extraction Failed Posts** remain visible on the home page.
+- A **Manual Refresh** imports new **Posts** only; it does not reprocess old Posts.
 - **Extracted Content** comes from Firecrawl reading the **Canonical Article URL** for each discovered **Post**.
 - RSS or Atom entry content is discovery and fallback metadata; Blink does not summarize only the feed description when page content can be extracted.
 - **Extracted Content** stores text only; images are referenced from their original servers rather than copied.

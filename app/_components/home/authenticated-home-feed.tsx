@@ -115,6 +115,7 @@ function HomeFeedLoadingSkeleton() {
         <h1 className="text-3xl font-black italic leading-none text-white">
           Blink
         </h1>
+        <div className="h-9 w-36 animate-pulse rounded-full bg-white/14" />
         <div className="h-9 w-28 animate-pulse rounded-full bg-white/14" />
       </header>
 

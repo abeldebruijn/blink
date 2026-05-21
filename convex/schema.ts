@@ -31,6 +31,7 @@ export default defineSchema({
   feedSubscriptions: defineTable({
     readerId: v.id("readers"),
     feedId: v.id("feeds"),
+    displayTitle: v.optional(v.union(v.string(), v.null())),
     submittedFeedUrl: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -104,6 +105,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_canonicalUrl", ["canonicalUrl"])
+    .index("by_feedId", ["feedId"])
     .index("by_feedImportRunId", ["feedImportRunId"])
     .index("by_discoveredAt", ["discoveredAt"]),
   homeFeedItems: defineTable({

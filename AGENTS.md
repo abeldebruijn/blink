@@ -1,3 +1,5 @@
+When there is already a dev server running, do not interfere with it. Do not kill it.
+
 <!-- convex-ai-start -->
 
 This project uses [Convex](https://convex.dev) as its backend.
