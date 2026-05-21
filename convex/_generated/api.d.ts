@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as feedImports from "../feedImports.js";
+import type * as firecrawlPosts from "../firecrawlPosts.js";
 import type * as homeFeed from "../homeFeed.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as readers from "../readers.js";
@@ -19,6 +21,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  feedImports: typeof feedImports;
+  firecrawlPosts: typeof firecrawlPosts;
   homeFeed: typeof homeFeed;
   myFunctions: typeof myFunctions;
   readers: typeof readers;

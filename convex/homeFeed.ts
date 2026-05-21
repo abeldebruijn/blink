@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import {
+  internalQuery,
   internalMutation,
   mutation,
   query,
@@ -48,7 +49,7 @@ function postAbstractFields(
   if (firecrawlPageSummary !== null && firecrawlPageSummary.trim() !== "") {
     return {
       abstract: firecrawlPageSummary,
-      abstractSource: "firecrawl_page_summary" as const,
+      abstractSource: "ai_generated" as const,
     };
   }
 
@@ -140,6 +141,8 @@ export const list = query({
         title: post.rssTitle,
         abstract: post.abstract,
         abstractSource: post.abstractSource,
+        firecrawlStatus: post.firecrawlStatus ?? null,
+        abstractStatus: post.abstractStatus ?? null,
         headerImageUrl: post.headerImageUrl,
         publishedAt: post.publishedAt,
         discoveredAt: post.discoveredAt,
@@ -174,6 +177,8 @@ export const markRead = mutation({
 
 export const upsertPost = internalMutation({
   args: {
+    feedId: v.optional(v.union(v.id("feeds"), v.null())),
+    feedImportRunId: v.optional(v.union(v.id("feedImportRuns"), v.null())),
     readerId: v.id("readers"),
     sourceTitle: v.string(),
     sourceSiteUrl: v.union(v.string(), v.null()),
@@ -182,9 +187,26 @@ export const upsertPost = internalMutation({
     rssDescription: v.union(v.string(), v.null()),
     rssLinkUrl: v.string(),
     canonicalUrl: v.string(),
+    firecrawlStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("succeeded"),
+        v.literal("failed"),
+      ),
+    ),
     firecrawlVisitedAt: v.union(v.number(), v.null()),
     firecrawlPageContent: v.union(v.string(), v.null()),
     firecrawlPageSummary: v.union(v.string(), v.null()),
+    firecrawlError: v.optional(v.union(v.string(), v.null())),
+    abstractStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("succeeded"),
+        v.literal("failed"),
+        v.null(),
+      ),
+    ),
+    abstractError: v.optional(v.union(v.string(), v.null())),
     headerImageUrl: v.union(v.string(), v.null()),
     publishedAt: v.union(v.number(), v.null()),
     discoveredAt: v.number(),
@@ -204,6 +226,8 @@ export const upsertPost = internalMutation({
       .unique();
 
     const postFields = {
+      feedId: args.feedId ?? null,
+      feedImportRunId: args.feedImportRunId ?? null,
       sourceTitle: args.sourceTitle,
       sourceSiteUrl: args.sourceSiteUrl,
       sourceFeedUrl: args.sourceFeedUrl,
@@ -211,9 +235,13 @@ export const upsertPost = internalMutation({
       rssDescription: args.rssDescription,
       rssLinkUrl: args.rssLinkUrl,
       canonicalUrl: args.canonicalUrl,
+      firecrawlStatus: args.firecrawlStatus ?? null,
       firecrawlVisitedAt: args.firecrawlVisitedAt,
       firecrawlPageContent: args.firecrawlPageContent,
       firecrawlPageSummary: args.firecrawlPageSummary,
+      firecrawlError: args.firecrawlError ?? null,
+      abstractStatus: args.abstractStatus ?? null,
+      abstractError: args.abstractError ?? null,
       ...abstractFields,
       headerImageUrl: args.headerImageUrl,
       publishedAt: args.publishedAt,
@@ -240,5 +268,31 @@ export const upsertPost = internalMutation({
     );
 
     return { postId, homeFeedItemId };
+  },
+});
+
+export const getProcessingState = internalQuery({
+  args: {
+    canonicalUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const post = await ctx.db
+      .query("posts")
+      .withIndex("by_canonicalUrl", (q) =>
+        q.eq("canonicalUrl", args.canonicalUrl),
+      )
+      .unique();
+
+    if (post === null) {
+      return null;
+    }
+
+    return {
+      postId: post._id,
+      firecrawlStatus: post.firecrawlStatus ?? null,
+      firecrawlVisitedAt: post.firecrawlVisitedAt,
+      firecrawlPageContent: post.firecrawlPageContent,
+      firecrawlPageSummary: post.firecrawlPageSummary,
+    };
   },
 });

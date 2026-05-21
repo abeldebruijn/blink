@@ -19,6 +19,23 @@ npm install
 npm run dev
 ```
 
+## Firecrawl
+
+Blink uses Firecrawl to read each RSS Post's canonical article URL before
+creating the Post Abstract. The Abstract is generated with the AI SDK through
+Vercel AI Gateway. RSS descriptions stay stored as fallback metadata, but they
+are not the normal summarization source.
+
+For local development, create a Firecrawl API key and add it to your Convex
+development environment:
+
+```
+npx convex env set FIRECRAWL_API_KEY fc-your-api-key
+npx convex env set AI_GATEWAY_API_KEY your-ai-gateway-api-key
+```
+
+Keep the keys out of git. `.env.example` documents variable names only.
+
 If you're reading this README on GitHub and want to use this template, run:
 
 ```

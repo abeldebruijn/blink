@@ -1,11 +1,300 @@
-import { PlaceholderPage } from "@/app/_components/placeholder-page";
+"use client";
+
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { SignInButton, useUser } from "@clerk/nextjs";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { AlertCircle, CheckCircle2, Loader2, Rss, Sparkles } from "lucide-react";
+import { api } from "@/convex/_generated/api";
+import { BottomNav } from "@/app/_components/bottom-nav";
+
+type Status = "pending" | "succeeded" | "failed" | null;
+
+function statusLabel(status: Status) {
+  if (status === "succeeded") {
+    return "Done";
+  }
+  if (status === "failed") {
+    return "Failed";
+  }
+  return "Pending";
+}
+
+function statusClass(status: Status) {
+  if (status === "succeeded") {
+    return "bg-[#dcefd8] text-[#265c2e]";
+  }
+  if (status === "failed") {
+    return "bg-[#f4d8d2] text-[#8a2d1c]";
+  }
+  return "bg-[#efe2c8] text-[#7a4a12]";
+}
 
 export default function AddFeedPage() {
+  const { isLoaded, isSignedIn, user } = useUser();
+  const ensureCurrentReader = useMutation(api.readers.ensureCurrent);
+  const startInitialImport = useAction(api.feedImports.startInitialImport);
+  const [submittedFeedUrl, setSubmittedFeedUrl] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [ensuredUserId, setEnsuredUserId] = useState<string | null>(null);
+  const userId = user?.id;
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || userId === undefined) {
+      return;
+    }
+
+    let cancelled = false;
+    void ensureCurrentReader({}).then(() => {
+      if (!cancelled) {
+        setEnsuredUserId(userId);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureCurrentReader, isLoaded, isSignedIn, userId]);
+
+  const readerReady = isSignedIn === true && ensuredUserId === userId;
+  const latestRun = useQuery(
+    api.feedImports.latestForCurrentReader,
+    readerReady ? {} : "skip",
+  );
+  const runPosts = useQuery(
+    api.feedImports.listRunPosts,
+    latestRun?._id !== undefined ? { feedImportRunId: latestRun._id, limit: 20 } : "skip",
+  );
+
+  const progress = useMemo(() => {
+    if (latestRun === null || latestRun === undefined) {
+      return null;
+    }
+    const finished = latestRun.completedCount + latestRun.failedCount;
+    return {
+      finished,
+      pending: Math.max(0, latestRun.importCount - finished),
+    };
+  }, [latestRun]);
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitError(null);
+    setIsSubmitting(true);
+    try {
+      await startInitialImport({ submittedFeedUrl });
+      setSubmittedFeedUrl("");
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Initial Import failed",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (!isLoaded) {
+    return <main className="min-h-screen bg-[#f7f3ec]" />;
+  }
+
   return (
-    <PlaceholderPage
-      eyebrow="Feed setup"
-      title="Add Feed"
-      description="Production placeholder for connecting a source, tuning import rules, and bringing new stories into Blink."
-    />
+    <main
+      className="min-h-screen bg-[#f7f3ec] text-[#171717]"
+      style={{ fontFamily: "var(--font-hanken-grotesk), sans-serif" }}
+    >
+      <section className="mx-auto flex min-h-screen w-full max-w-[680px] flex-col px-5 pb-28 pt-5">
+        <header>
+          <h1 className="text-3xl font-black italic leading-none">Add Feed</h1>
+        </header>
+
+        <div className="grid flex-1 content-start gap-5 py-8">
+          {!isSignedIn ? (
+            <section className="grid justify-items-center gap-4 py-20 text-center">
+              <div className="grid size-16 place-items-center rounded-full bg-[#171717] text-white">
+                <Rss className="size-7" aria-hidden="true" />
+              </div>
+              <div className="grid max-w-[25rem] gap-3">
+                <h2 className="text-3xl font-black leading-none">
+                  Sign in to add Feeds
+                </h2>
+                <p className="text-base leading-7 text-[#5d554b]">
+                  Blink imports Posts for authenticated Readers only.
+                </p>
+              </div>
+              <SignInButton mode="modal">
+                <button className="h-12 rounded-full bg-[#171717] px-5 text-sm font-black text-white transition hover:bg-[#2a2a2a]">
+                  Sign in
+                </button>
+              </SignInButton>
+            </section>
+          ) : (
+            <>
+              <form
+                onSubmit={onSubmit}
+                className="grid gap-3 rounded-[8px] border border-black/10 bg-white p-4 shadow-[0_18px_50px_rgba(23,23,23,0.08)]"
+              >
+                <label
+                  htmlFor="submitted-feed-url"
+                  className="text-sm font-black"
+                >
+                  Submitted Feed URL
+                </label>
+                <input
+                  id="submitted-feed-url"
+                  type="url"
+                  required
+                  value={submittedFeedUrl}
+                  onChange={(event) => setSubmittedFeedUrl(event.target.value)}
+                  placeholder="https://example.com/feed.xml"
+                  className="h-12 rounded-[8px] border border-black/12 bg-[#fbfaf7] px-4 text-base font-semibold outline-none transition placeholder:text-[#9b9287] focus:border-[#171717]"
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm leading-6 text-[#6f675d]">
+                    Direct RSS or Atom URLs only. Website discovery comes later.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !readerReady}
+                    className="inline-flex h-12 shrink-0 items-center gap-2 rounded-full bg-[#171717] px-5 text-sm font-black text-white transition hover:bg-[#2a2a2a] disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Sparkles className="size-4" aria-hidden="true" />
+                    )}
+                    Import
+                  </button>
+                </div>
+                {submitError !== null ? (
+                  <p className="flex items-start gap-2 rounded-[8px] bg-[#f4d8d2] p-3 text-sm font-bold leading-6 text-[#8a2d1c]">
+                    <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    {submitError}
+                  </p>
+                ) : null}
+              </form>
+
+              {latestRun !== undefined && latestRun !== null ? (
+                <section className="grid gap-4 rounded-[8px] border border-black/10 bg-white p-4 shadow-[0_18px_50px_rgba(23,23,23,0.08)]">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="grid gap-1">
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-[#8a3d16]">
+                        Latest Feed
+                      </p>
+                      <h2 className="text-2xl font-black leading-tight">
+                        {latestRun.feedTitle}
+                      </h2>
+                      <p className="break-all text-sm font-semibold text-[#6f675d]">
+                        {latestRun.canonicalFeedUrl}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-[#dcefd8] px-3 py-1 text-xs font-black text-[#265c2e]">
+                      {latestRun.status}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <Metric label="Discovered" value={latestRun.discoveredCount} />
+                    <Metric label="Imported" value={latestRun.importCount} />
+                    <Metric label="Done" value={latestRun.completedCount} />
+                    <Metric label="Failed" value={latestRun.failedCount} />
+                  </div>
+
+                  {progress !== null ? (
+                    <div className="h-2 overflow-hidden rounded-full bg-black/10">
+                      <div
+                        className="h-full rounded-full bg-[#171717] transition-all"
+                        style={{
+                          width: `${Math.round(
+                            (progress.finished / Math.max(1, latestRun.importCount)) *
+                              100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-3">
+                    <h3 className="text-sm font-black">Recent Posts</h3>
+                    {runPosts === undefined ? (
+                      <div className="flex items-center gap-2 text-sm font-bold text-[#6f675d]">
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        Loading Posts
+                      </div>
+                    ) : runPosts.length === 0 ? (
+                      <p className="text-sm font-semibold text-[#6f675d]">
+                        Posts will appear as soon as the Initial Import starts.
+                      </p>
+                    ) : (
+                      runPosts.map((post) => (
+                        <article
+                          key={post._id}
+                          className="grid gap-3 border-t border-black/10 pt-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <h4 className="text-base font-black leading-5">
+                              {post.title}
+                            </h4>
+                            {post.abstractStatus === "succeeded" ? (
+                              <CheckCircle2
+                                className="size-5 shrink-0 text-[#265c2e]"
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <StatusPill
+                              label={`Firecrawl ${statusLabel(post.firecrawlStatus)}`}
+                              status={post.firecrawlStatus}
+                            />
+                            <StatusPill
+                              label={`Abstract ${statusLabel(post.abstractStatus)}`}
+                              status={post.abstractStatus}
+                            />
+                          </div>
+                          {post.abstract !== null ? (
+                            <p className="text-sm leading-6 text-[#5d554b]">
+                              {post.abstract}
+                            </p>
+                          ) : null}
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </section>
+              ) : (
+                <section className="grid justify-items-center gap-3 rounded-[8px] border border-dashed border-black/20 p-8 text-center">
+                  <Rss className="size-7 text-[#8a3d16]" aria-hidden="true" />
+                  <p className="max-w-[24rem] text-sm font-semibold leading-6 text-[#6f675d]">
+                    Submit a Feed to see how many Posts Blink found and watch
+                    Firecrawl extraction and Abstract generation run.
+                  </p>
+                </section>
+              )}
+            </>
+          )}
+        </div>
+
+        <BottomNav variant="light" />
+      </section>
+    </main>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[8px] bg-[#f7f3ec] p-3">
+      <p className="text-2xl font-black leading-none">{value}</p>
+      <p className="mt-1 text-xs font-black uppercase tracking-[0.12em] text-[#6f675d]">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function StatusPill({ label, status }: { label: string; status: Status }) {
+  return (
+    <span className={`rounded-full px-3 py-1 text-xs font-black ${statusClass(status)}`}>
+      {label}
+    </span>
   );
 }

@@ -215,7 +215,7 @@ function AuthenticatedHomeFeed({
       className="min-h-screen bg-[#f7f3ec] text-[#171717]"
       style={{ fontFamily: "var(--font-hanken-grotesk), sans-serif" }}
     >
-      <section className="mx-auto flex min-h-screen w-full max-w-[680px] flex-col px-5 py-5">
+      <section className="mx-auto flex min-h-screen w-full max-w-[680px] flex-col px-5 pb-28 pt-5">
         <header className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-black italic leading-none">Blink</h1>

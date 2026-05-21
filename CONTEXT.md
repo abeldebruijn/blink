@@ -142,7 +142,7 @@ _Avoid_: Reprocess, backfill
 ## Flagged ambiguities
 
 - "RSS feed" was used to mean both the source and the user's subscription — resolved: **Feed** is the source, **Feed Subscription** is the user's relationship to it.
-- "currently provided" means the newest entries listed directly in the Feed during the **Initial Import**, capped at 50 **Posts**.
+- "currently provided" means the newest entries listed directly in the Feed during the **Initial Import**, capped at 20 **Posts**.
 - A **Daily Refresh** imports new **Posts** only; reprocessing old Posts is a separate manual or admin operation.
 - The **MVP** excludes **Daily Refresh**, **Social Discovery**, advanced ranking, Feed mute, public Blink pages, and full reprocessing UI.
 - **Import Status** is visible at Feed and Post level, but detailed job logs are outside v1 scope.
