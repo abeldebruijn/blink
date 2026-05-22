@@ -1,9 +1,12 @@
 import type { FunctionReturnType } from "convex/server";
+import type { PaginationStatus } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-export type HomeFeedData = FunctionReturnType<typeof api.homeFeed.list>;
-export type HomeFeedItems = HomeFeedData["items"];
-export type HomeFeedItem = HomeFeedData["items"][number];
+export type HomeFeedPage = FunctionReturnType<typeof api.homeFeed.listPage>;
+export type HomeFeedCounts = FunctionReturnType<typeof api.homeFeed.counts>;
+export type HomeFeedItems = HomeFeedPage["page"];
+export type HomeFeedItem = HomeFeedItems[number];
+export type HomeFeedPaginationStatus = PaginationStatus;
 export type HomeFeedFilter = "unread" | "read" | "saved" | "liked";
 
 export const feedFilterLabels: Record<HomeFeedFilter, string> = {

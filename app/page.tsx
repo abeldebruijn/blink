@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { AuthenticatedHomeFeed } from "./_components/home/authenticated-home-feed";
@@ -67,9 +67,14 @@ export default function Home() {
     };
   }, [backfillHomeFeedBuckets, backfilledUserId, readerReady, userId]);
 
-  const homeFeed = useQuery(
-    api.homeFeed.list,
-    isSignedIn && readerReady ? { limit: 20, feed: selectedFeed } : "skip",
+  const homeFeedCounts = useQuery(
+    api.homeFeed.counts,
+    isSignedIn && readerReady ? {} : "skip",
+  );
+  const homeFeed = usePaginatedQuery(
+    api.homeFeed.listPage,
+    isSignedIn && readerReady ? { feed: selectedFeed } : "skip",
+    { initialNumItems: 20 },
   );
 
   if (!isLoaded) {
@@ -84,7 +89,10 @@ export default function Home() {
   if (isLoaded && isSignedIn) {
     return (
       <AuthenticatedHomeFeed
-        homeFeed={homeFeed}
+        homeFeedItems={homeFeed.results}
+        homeFeedCounts={homeFeedCounts}
+        paginationStatus={homeFeed.status}
+        loadMoreHomeFeedItems={homeFeed.loadMore}
         readerReady={readerReady}
         readerError={readerError}
       />
