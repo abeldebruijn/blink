@@ -9,6 +9,7 @@ export default defineConfig([
   ...convexPlugin.configs.recommended,
   globalIgnores([
     "convex/_generated",
+    "app/.well-known/workflow/**",
     ".sandcastle/codex-home/**",
     ".sandcastle/logs/**",
     ".sandcastle/worktrees/**",

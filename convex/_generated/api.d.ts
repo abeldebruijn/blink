@@ -10,8 +10,8 @@
 
 import type * as feedImports from "../feedImports.js";
 import type * as feedSubscriptions from "../feedSubscriptions.js";
-import type * as firecrawlPosts from "../firecrawlPosts.js";
 import type * as homeFeed from "../homeFeed.js";
+import type * as importWorkflow from "../importWorkflow.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as readers from "../readers.js";
 
@@ -24,8 +24,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   feedImports: typeof feedImports;
   feedSubscriptions: typeof feedSubscriptions;
-  firecrawlPosts: typeof firecrawlPosts;
   homeFeed: typeof homeFeed;
+  importWorkflow: typeof importWorkflow;
   myFunctions: typeof myFunctions;
   readers: typeof readers;
 }>;
