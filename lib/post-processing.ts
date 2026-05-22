@@ -97,7 +97,15 @@ export async function scrapeWithFirecrawl(canonicalUrl: string) {
   const payload = (await response
     .json()
     .catch(() => ({}))) as FirecrawlScrapeResponse;
-  if (!response.ok || payload.success === false) {
+  if (!response.ok) {
+    throw new Error(
+      payload.error ??
+        payload.data?.metadata?.error ??
+        `Firecrawl scrape failed with HTTP ${response.status}`,
+    );
+  }
+
+  if (payload.success === false) {
     return {
       ok: false as const,
       error:

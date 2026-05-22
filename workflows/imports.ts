@@ -296,23 +296,14 @@ async function processPost(args: WorkflowPostInput) {
 
   await upsertPendingPost({ ...args, canonicalUrl });
 
-  const scraped = await scrapePost(canonicalUrl).catch((error) => ({
-    ok: false as const,
-    error: error instanceof Error ? error.message : "Firecrawl scrape failed",
-  }));
+  const scraped = await scrapePost(canonicalUrl);
   const visitedAt = Date.now();
   const generated =
     scraped.ok === true
-      ? await generatePostAbstract(scraped.content, args.rssTitle).then(
-          (abstract) => ({ ok: true as const, abstract }),
-          (error) => ({
-            ok: false as const,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Abstract generation failed",
-          }),
-        )
+      ? {
+          ok: true as const,
+          abstract: await generatePostAbstract(scraped.content, args.rssTitle),
+        }
       : { ok: false as const, error: scraped.error };
 
   await upsertProcessedPost({

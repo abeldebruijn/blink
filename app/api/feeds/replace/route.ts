@@ -1,6 +1,7 @@
 import { start } from "workflow/api";
 import { requireCurrentReader, jsonError } from "@/lib/server/convex";
 import type { Id } from "@/convex/_generated/dataModel";
+import { preflightFeedUrl } from "@/lib/server/feed-preflight";
 import { replacementImportWorkflow } from "@/workflows/imports";
 
 export async function POST(request: Request) {
@@ -20,10 +21,11 @@ export async function POST(request: Request) {
       );
     }
 
+    const submittedFeedUrl = await preflightFeedUrl(body.submittedFeedUrl);
     await start(replacementImportWorkflow, [
       reader._id,
       body.feedSubscriptionId as Id<"feedSubscriptions">,
-      body.submittedFeedUrl,
+      submittedFeedUrl,
     ]);
     return Response.json({ started: true });
   } catch (error) {
