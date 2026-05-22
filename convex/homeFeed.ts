@@ -333,32 +333,53 @@ export const listPage = query({
   },
   handler: async (ctx, args) => {
     const reader = await requireCurrentReader(ctx);
-    const page = await homeFeedBuckets.paginate(ctx, {
-      ...countBounds(reader._id, args.feed),
-      cursor: args.paginationOpts.cursor ?? undefined,
-      order: "desc",
-      pageSize: boundedLimit(args.paginationOpts.numItems),
-    });
-
+    const pageSize = boundedLimit(args.paginationOpts.numItems);
+    let cursor = args.paginationOpts.cursor ?? "";
+    let isDone = false;
     const results = [];
-    for (const aggregateItem of page.page) {
-      const itemId = ctx.db.normalizeId(
-        "homeFeedItems",
-        itemIdFromAggregateId(aggregateItem.id),
-      );
-      if (itemId === null) {
-        continue;
+
+    while (results.length < pageSize && !isDone) {
+      const previousCursor = cursor;
+      const page = await homeFeedBuckets.paginate(ctx, {
+        ...countBounds(reader._id, args.feed),
+        cursor: cursor === "" ? undefined : cursor,
+        order: "desc",
+        pageSize,
+      });
+      cursor = page.cursor;
+      isDone = page.isDone;
+      // Aggregate pagination should always advance or finish. If that contract
+      // breaks, stop here instead of spinning forever on the same stale page.
+      if (cursor === previousCursor) {
+        break;
       }
-      const view = await homeFeedItemView(ctx, reader._id, itemId);
-      if (view !== null) {
-        results.push(view);
+
+      for (const aggregateItem of page.page) {
+        const itemId = ctx.db.normalizeId(
+          "homeFeedItems",
+          itemIdFromAggregateId(aggregateItem.id),
+        );
+        if (itemId === null) {
+          continue;
+        }
+        const view = await homeFeedItemView(ctx, reader._id, itemId);
+        if (view !== null) {
+          results.push(view);
+          if (results.length >= pageSize) {
+            break;
+          }
+        }
+      }
+
+      if (page.page.length === 0) {
+        break;
       }
     }
 
     return {
       page: results,
-      isDone: page.isDone,
-      continueCursor: page.cursor,
+      isDone,
+      continueCursor: cursor,
     };
   },
 });
