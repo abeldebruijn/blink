@@ -9,9 +9,20 @@ import {
   parseFeed,
   type FeedEntry,
 } from "@/lib/feed-imports";
-import { generateAbstract, scrapeWithFirecrawl } from "@/lib/post-processing";
+import {
+  describeTagsForAutoTag,
+  embedTaggingText,
+  embedTaggingTexts,
+  generateAbstract,
+  generateAutoTagSuggestions,
+  scrapeWithFirecrawl,
+  taggingInput,
+  tagEmbeddingModel,
+} from "@/lib/post-processing";
 
 const postBatchSize = 4;
+const autoTagMaxTags = 7;
+const autoTagSimilarityThreshold = 0.82;
 
 type PreparedImport = {
   readerId: Id<"readers">;
@@ -32,6 +43,14 @@ type WorkflowPostInput = {
   publishedAt: number | null;
   discoveredAt: number;
   rssImageUrl: string | null;
+  autoTag: boolean;
+};
+
+type ExistingAutoTag = {
+  _id: Id<"tags">;
+  name: string;
+  description: string | null;
+  hasEmbedding: boolean;
 };
 
 function convex() {
@@ -127,10 +146,7 @@ async function prepareReplacementImport(args: {
   });
 }
 
-async function preparePostRetry(
-  readerId: Id<"readers">,
-  postId: Id<"posts">,
-) {
+async function preparePostRetry(readerId: Id<"readers">, postId: Id<"posts">) {
   "use step";
 
   return await convex().mutation(api.importWorkflow.preparePostRetry, {
@@ -171,7 +187,8 @@ async function upsertPendingPost(
 ) {
   "use step";
 
-  const { rssImageUrl, ...rest } = args;
+  const { autoTag: _autoTag, rssImageUrl, ...rest } = args;
+  void _autoTag;
 
   await convex().mutation(api.importWorkflow.upsertPost, {
     serviceToken: serviceToken(),
@@ -204,7 +221,7 @@ async function upsertProcessedPost(
 ) {
   "use step";
 
-  await convex().mutation(api.importWorkflow.upsertPost, {
+  return await convex().mutation(api.importWorkflow.upsertPost, {
     serviceToken: serviceToken(),
     feedId: args.feedId,
     feedImportRunId: args.feedImportRunId,
@@ -243,6 +260,73 @@ async function getProcessingState(canonicalUrl: string) {
   });
 }
 
+async function getAutoTagContext(
+  readerId: Id<"readers">,
+  homeFeedItemId: Id<"homeFeedItems">,
+) {
+  "use step";
+
+  return await convex().query(api.importWorkflow.getAutoTagContext, {
+    serviceToken: serviceToken(),
+    readerId,
+    homeFeedItemId,
+  });
+}
+
+async function updateAutoTagEmbeddings(
+  readerId: Id<"readers">,
+  tags: Array<{
+    tagId: Id<"tags">;
+    description: string;
+    embedding: number[];
+    embeddingModel: string;
+  }>,
+) {
+  "use step";
+
+  if (tags.length === 0) {
+    return { updated: 0 };
+  }
+
+  return await convex().mutation(api.importWorkflow.updateAutoTagEmbeddings, {
+    serviceToken: serviceToken(),
+    readerId,
+    tags,
+  });
+}
+
+async function searchAutoTagCandidates(
+  readerId: Id<"readers">,
+  embedding: number[],
+) {
+  "use step";
+
+  return await convex().action(api.importWorkflow.searchAutoTagCandidates, {
+    serviceToken: serviceToken(),
+    readerId,
+    embedding,
+  });
+}
+
+async function applyAutoTags(args: {
+  readerId: Id<"readers">;
+  homeFeedItemId: Id<"homeFeedItems">;
+  existingTagIds: Id<"tags">[];
+  newTags: Array<{
+    name: string;
+    description: string;
+    embedding: number[];
+    embeddingModel: string;
+  }>;
+}) {
+  "use step";
+
+  return await convex().mutation(api.importWorkflow.applyAutoTags, {
+    serviceToken: serviceToken(),
+    ...args,
+  });
+}
+
 async function scrapePost(canonicalUrl: string) {
   "use step";
 
@@ -253,6 +337,117 @@ async function generatePostAbstract(content: string, title: string) {
   "use step";
 
   return await generateAbstract(content, title);
+}
+
+async function prepareMissingTagEmbeddings(tags: ExistingAutoTag[]) {
+  "use step";
+
+  const missing = tags.filter((tag) => !tag.hasEmbedding);
+  if (missing.length === 0) {
+    return [];
+  }
+
+  const descriptions = await describeTagsForAutoTag(
+    missing.map((tag) => ({ tagId: tag._id, name: tag.name })),
+  );
+  const embeddings = await embedTaggingTexts(
+    descriptions.map((tag) => tag.description),
+  );
+
+  return descriptions.map((tag, index) => ({
+    tagId: tag.tagId as Id<"tags">,
+    description: tag.description,
+    embedding: embeddings[index] ?? [],
+    embeddingModel: tagEmbeddingModel,
+  }));
+}
+
+async function prepareNewTagEmbeddings(
+  tags: Array<{ name: string; description: string }>,
+) {
+  "use step";
+
+  if (tags.length === 0) {
+    return [];
+  }
+
+  const embeddings = await embedTaggingTexts(
+    tags.map((tag) => tag.description),
+  );
+  return tags.map((tag, index) => ({
+    ...tag,
+    embedding: embeddings[index] ?? [],
+    embeddingModel: tagEmbeddingModel,
+  }));
+}
+
+async function autoTagReadablePost(args: {
+  readerId: Id<"readers">;
+  homeFeedItemId: Id<"homeFeedItems">;
+  rssTitle: string;
+  sourceTitle: string;
+  abstract: string | null;
+  content: string;
+}) {
+  const context = await getAutoTagContext(args.readerId, args.homeFeedItemId);
+  if (!context.shouldTag) {
+    return;
+  }
+
+  const preparedTags = await prepareMissingTagEmbeddings(context.tags);
+  await updateAutoTagEmbeddings(args.readerId, preparedTags);
+
+  const descriptionByTagId = new Map(
+    context.tags.map((tag) => [tag._id, tag.description]),
+  );
+  for (const tag of preparedTags) {
+    descriptionByTagId.set(tag.tagId, tag.description);
+  }
+
+  const input = taggingInput({
+    title: args.rssTitle,
+    sourceTitle: args.sourceTitle,
+    abstract: args.abstract,
+    content: args.content,
+  });
+  const postEmbedding = await embedTaggingText(input);
+  const vectorCandidates = await searchAutoTagCandidates(
+    args.readerId,
+    postEmbedding,
+  );
+  const selectedExistingTagIds = vectorCandidates
+    .filter((candidate) => candidate._score >= autoTagSimilarityThreshold)
+    .slice(0, autoTagMaxTags)
+    .map((candidate) => candidate._id);
+
+  const remainingSlots = autoTagMaxTags - selectedExistingTagIds.length;
+  const suggestions =
+    remainingSlots > 0
+      ? await generateAutoTagSuggestions({
+          title: args.rssTitle,
+          sourceTitle: args.sourceTitle,
+          content: input,
+          existingTags: context.tags.map((tag) => ({
+            tagId: tag._id,
+            name: tag.name,
+            description: descriptionByTagId.get(tag._id) ?? null,
+          })),
+          alreadySelectedTagIds: selectedExistingTagIds,
+          remainingSlots,
+        })
+      : { existingTagIds: [], newTags: [] };
+
+  const suggestedExistingTagIds = suggestions.existingTagIds.map(
+    (tagId) => tagId as Id<"tags">,
+  );
+  const newTags = await prepareNewTagEmbeddings(suggestions.newTags);
+
+  await applyAutoTags({
+    readerId: args.readerId,
+    homeFeedItemId: args.homeFeedItemId,
+    existingTagIds: [...selectedExistingTagIds, ...suggestedExistingTagIds],
+    newTags,
+  });
 }
 
 async function upsertExistingPost(args: {
@@ -275,7 +470,7 @@ async function upsertExistingPost(args: {
 }) {
   "use step";
 
-  await convex().mutation(api.importWorkflow.upsertPost, {
+  return await convex().mutation(api.importWorkflow.upsertPost, {
     serviceToken: serviceToken(),
     feedId: args.feedId,
     feedImportRunId: args.feedImportRunId,
@@ -292,8 +487,7 @@ async function upsertExistingPost(args: {
     firecrawlPageContent: args.firecrawlPageContent,
     firecrawlPageSummary: args.firecrawlPageSummary,
     firecrawlError: null,
-    abstractStatus:
-      args.firecrawlPageSummary !== null ? "succeeded" : "failed",
+    abstractStatus: args.firecrawlPageSummary !== null ? "succeeded" : "failed",
     abstractError:
       args.firecrawlPageSummary !== null
         ? null
@@ -311,7 +505,7 @@ async function processPost(args: WorkflowPostInput) {
     existing?.firecrawlStatus === "succeeded" &&
     existing.firecrawlVisitedAt !== null
   ) {
-    await upsertExistingPost({
+    const upserted = await upsertExistingPost({
       feedId: args.feedId,
       feedImportRunId: args.feedImportRunId,
       readerId: args.readerId,
@@ -333,22 +527,45 @@ async function processPost(args: WorkflowPostInput) {
       args.feedImportRunId,
       existing.firecrawlPageSummary !== null,
     );
+    if (args.autoTag && existing.firecrawlPageContent !== null) {
+      try {
+        await autoTagReadablePost({
+          readerId: args.readerId,
+          homeFeedItemId: upserted.homeFeedItemId,
+          rssTitle: args.rssTitle,
+          sourceTitle: args.sourceTitle,
+          abstract: existing.firecrawlPageSummary,
+          content: existing.firecrawlPageContent,
+        });
+      } catch (error) {
+        console.error("Auto-tagging failed", error);
+      }
+    }
     return;
   }
 
   await upsertPendingPost({ ...args, canonicalUrl });
 
-  const scraped = await scrapePost(canonicalUrl);
+  const scraped = await scrapePost(canonicalUrl).catch((error) => ({
+    ok: false as const,
+    error: error instanceof Error ? error.message : "Firecrawl scrape failed",
+  }));
   const visitedAt = Date.now();
   const generated =
     scraped.ok === true
-      ? {
-          ok: true as const,
-          abstract: await generatePostAbstract(scraped.content, args.rssTitle),
-        }
+      ? await generatePostAbstract(scraped.content, args.rssTitle).then(
+          (abstract) => ({ ok: true as const, abstract }),
+          (error) => ({
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Abstract generation failed",
+          }),
+        )
       : { ok: false as const, error: scraped.error };
 
-  await upsertProcessedPost({
+  const upserted = await upsertProcessedPost({
     ...args,
     canonicalUrl,
     scraped,
@@ -356,11 +573,27 @@ async function processPost(args: WorkflowPostInput) {
     visitedAt,
   });
   await recordPostProcessed(args.feedImportRunId, scraped.ok && generated.ok);
+  if (args.autoTag && scraped.ok) {
+    try {
+      await autoTagReadablePost({
+        readerId: args.readerId,
+        homeFeedItemId: upserted.homeFeedItemId,
+        rssTitle: args.rssTitle,
+        sourceTitle: args.sourceTitle,
+        abstract: generated.ok ? generated.abstract : scraped.summary,
+        content: scraped.content,
+      });
+    } catch (error) {
+      console.error("Auto-tagging failed", error);
+    }
+  }
 }
 
 async function processPostsInBatches(posts: WorkflowPostInput[]) {
   for (let index = 0; index < posts.length; index += postBatchSize) {
-    await Promise.all(posts.slice(index, index + postBatchSize).map(processPost));
+    await Promise.all(
+      posts.slice(index, index + postBatchSize).map(processPost),
+    );
   }
 }
 
@@ -372,6 +605,7 @@ function postInput(
     sourceSiteUrl: string | null;
     sourceFeedUrl: string;
     discoveredAt: number;
+    autoTag: boolean;
   },
 ): WorkflowPostInput {
   return {
@@ -387,6 +621,7 @@ function postInput(
     publishedAt: entry.publishedAt,
     discoveredAt: args.discoveredAt,
     rssImageUrl: entry.imageUrl,
+    autoTag: args.autoTag,
   };
 }
 
@@ -422,6 +657,7 @@ export async function initialImportWorkflow(
         sourceSiteUrl: feed.siteUrl,
         sourceFeedUrl: submittedFeedUrl,
         discoveredAt,
+        autoTag: true,
       }),
     ),
   );
@@ -468,6 +704,7 @@ export async function manualRefreshWorkflow(
         sourceSiteUrl: feed.siteUrl,
         sourceFeedUrl: subscription.canonicalFeedUrl,
         discoveredAt,
+        autoTag: true,
       }),
     ),
   );
@@ -509,6 +746,7 @@ export async function replacementImportWorkflow(
         sourceSiteUrl: feed.siteUrl,
         sourceFeedUrl: submittedFeedUrl,
         discoveredAt,
+        autoTag: false,
       }),
     ),
   );
@@ -523,5 +761,5 @@ export async function postRetryWorkflow(
   "use workflow";
 
   const retryArgs = await preparePostRetry(readerId, postId);
-  await processPost({ ...retryArgs, feedImportRunId: null });
+  await processPost({ ...retryArgs, feedImportRunId: null, autoTag: false });
 }
