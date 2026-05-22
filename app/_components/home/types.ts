@@ -4,6 +4,7 @@ import { api } from "@/convex/_generated/api";
 
 export type HomeFeedPage = FunctionReturnType<typeof api.homeFeed.listPage>;
 export type HomeFeedCounts = FunctionReturnType<typeof api.homeFeed.counts>;
+export type HomeFeedTags = FunctionReturnType<typeof api.homeFeed.listTags>;
 export type HomeFeedItems = HomeFeedPage["page"];
 export type HomeFeedItem = HomeFeedItems[number];
 export type HomeFeedPaginationStatus = PaginationStatus;

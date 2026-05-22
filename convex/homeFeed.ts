@@ -156,6 +156,40 @@ function countBounds(readerId: Id<"readers">, bucket: HomeFeedBucket) {
   };
 }
 
+function normalizeTagName(name: string) {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function displayTagName(name: string) {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+async function tagsForHomeFeedItem(
+  ctx: QueryCtx,
+  readerId: Id<"readers">,
+  homeFeedItemId: Id<"homeFeedItems">,
+) {
+  const joins = await ctx.db
+    .query("homeFeedItemTags")
+    .withIndex("by_readerId_and_homeFeedItemId", (q) =>
+      q.eq("readerId", readerId).eq("homeFeedItemId", homeFeedItemId),
+    )
+    .collect();
+
+  const tags = [];
+  for (const join of joins) {
+    const tag = await ctx.db.get(join.tagId);
+    if (tag !== null && tag.readerId === readerId) {
+      tags.push({
+        _id: tag._id,
+        name: tag.name,
+      });
+    }
+  }
+
+  return tags.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 async function homeFeedItemView(
   ctx: QueryCtx,
   readerId: Id<"readers">,
@@ -193,6 +227,7 @@ async function homeFeedItemView(
     isReadLater: item.readLaterAt !== undefined && item.readLaterAt !== null,
     likedAt: item.likedAt ?? null,
     isLiked: item.likedAt !== undefined && item.likedAt !== null,
+    tags: await tagsForHomeFeedItem(ctx, readerId, item._id),
   };
 }
 
@@ -379,6 +414,108 @@ export const getReadingView = query({
       likedAt: item.likedAt ?? null,
       isLiked: item.likedAt !== undefined && item.likedAt !== null,
     };
+  },
+});
+
+export const listTags = query({
+  args: {},
+  handler: async (ctx) => {
+    const reader = await requireCurrentReader(ctx);
+    const tags = await ctx.db
+      .query("tags")
+      .withIndex("by_readerId_and_updatedAt", (q) =>
+        q.eq("readerId", reader._id),
+      )
+      .order("desc")
+      .collect();
+
+    return tags.map((tag) => ({
+      _id: tag._id,
+      name: tag.name,
+    }));
+  },
+});
+
+export const addTagToHomeFeedItem = mutation({
+  args: {
+    homeFeedItemId: v.id("homeFeedItems"),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const reader = await requireCurrentReader(ctx);
+    const item = await ctx.db.get(args.homeFeedItemId);
+    if (item === null || item.readerId !== reader._id) {
+      throw new ConvexError("Home feed item not found");
+    }
+
+    const name = displayTagName(args.name);
+    const normalizedName = normalizeTagName(name);
+    if (normalizedName === "") {
+      throw new ConvexError("Tag name is required");
+    }
+
+    const now = Date.now();
+    const existingTag = await ctx.db
+      .query("tags")
+      .withIndex("by_readerId_and_normalizedName", (q) =>
+        q.eq("readerId", reader._id).eq("normalizedName", normalizedName),
+      )
+      .unique();
+    const tagId =
+      existingTag?._id ??
+      (await ctx.db.insert("tags", {
+        readerId: reader._id,
+        name,
+        normalizedName,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+    if (existingTag !== null) {
+      await ctx.db.patch(existingTag._id, { updatedAt: now });
+    }
+
+    const existingJoin = await ctx.db
+      .query("homeFeedItemTags")
+      .withIndex("by_homeFeedItemId_and_tagId", (q) =>
+        q.eq("homeFeedItemId", args.homeFeedItemId).eq("tagId", tagId),
+      )
+      .unique();
+    if (existingJoin === null) {
+      await ctx.db.insert("homeFeedItemTags", {
+        readerId: reader._id,
+        homeFeedItemId: args.homeFeedItemId,
+        tagId,
+        createdAt: now,
+      });
+    }
+
+    await ctx.db.patch(args.homeFeedItemId, { updatedAt: now });
+  },
+});
+
+export const removeTagFromHomeFeedItem = mutation({
+  args: {
+    homeFeedItemId: v.id("homeFeedItems"),
+    tagId: v.id("tags"),
+  },
+  handler: async (ctx, args) => {
+    const reader = await requireCurrentReader(ctx);
+    const item = await ctx.db.get(args.homeFeedItemId);
+    if (item === null || item.readerId !== reader._id) {
+      throw new ConvexError("Home feed item not found");
+    }
+
+    const join = await ctx.db
+      .query("homeFeedItemTags")
+      .withIndex("by_homeFeedItemId_and_tagId", (q) =>
+        q.eq("homeFeedItemId", args.homeFeedItemId).eq("tagId", args.tagId),
+      )
+      .unique();
+    if (join !== null && join.readerId === reader._id) {
+      await ctx.db.delete(join._id);
+      await ctx.db.patch(args.homeFeedItemId, { updatedAt: Date.now() });
+    }
   },
 });
 

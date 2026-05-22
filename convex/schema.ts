@@ -122,4 +122,34 @@ export default defineSchema({
   })
     .index("by_readerId_and_sortTime", ["readerId", "sortTime"])
     .index("by_readerId_and_postId", ["readerId", "postId"]),
+  tags: defineTable({
+    readerId: v.id("readers"),
+    name: v.string(),
+    normalizedName: v.string(),
+    description: v.optional(v.union(v.string(), v.null())),
+    embedding: v.optional(v.union(v.array(v.float64()), v.null())),
+    embeddingModel: v.optional(v.union(v.string(), v.null())),
+    embeddingUpdatedAt: v.optional(v.union(v.number(), v.null())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_readerId_and_normalizedName", [
+      "readerId",
+      "normalizedName",
+    ])
+    .index("by_readerId_and_updatedAt", ["readerId", "updatedAt"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["readerId"],
+    }),
+  homeFeedItemTags: defineTable({
+    readerId: v.id("readers"),
+    homeFeedItemId: v.id("homeFeedItems"),
+    tagId: v.id("tags"),
+    createdAt: v.number(),
+  })
+    .index("by_readerId_and_homeFeedItemId", ["readerId", "homeFeedItemId"])
+    .index("by_readerId_and_tagId", ["readerId", "tagId"])
+    .index("by_homeFeedItemId_and_tagId", ["homeFeedItemId", "tagId"]),
 });
