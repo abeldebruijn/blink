@@ -9,6 +9,16 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { BottomNav } from "@/app/_components/bottom-nav";
 import { siteHost } from "@/app/_components/home/feed-utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function postDateLabel(timestamp: number) {
   return new Date(timestamp).toLocaleDateString(undefined, {
@@ -26,6 +36,10 @@ export default function ReadLaterPage() {
   const [readerErrorUserId, setReaderErrorUserId] = useState<string | null>(
     null,
   );
+  const [pendingRemove, setPendingRemove] = useState<{
+    homeFeedItemId: Id<"homeFeedItems">;
+    title: string;
+  } | null>(null);
   const userId = user?.id;
 
   useEffect(() => {
@@ -62,13 +76,10 @@ export default function ReadLaterPage() {
     !isLoaded ||
     (!readerError && isSignedIn === true && readLaterItems === undefined);
 
-  async function onRemove(homeFeedItemId: Id<"homeFeedItems">, title: string) {
-    const confirmed = window.confirm(`Remove "${title}" from Read Later?`);
-    if (!confirmed) {
-      return;
-    }
+  async function onRemove(homeFeedItemId: Id<"homeFeedItems">) {
     try {
       await toggleReadLater({ homeFeedItemId, readLater: false });
+      setPendingRemove(null);
     } catch (err) {
       console.error("Failed to remove Read Later item:", err);
     }
@@ -155,7 +166,12 @@ export default function ReadLaterPage() {
                       type="button"
                       title="Remove from Read Later"
                       aria-label="Remove from Read Later"
-                      onClick={() => onRemove(item._id, item.title)}
+                      onClick={() =>
+                        setPendingRemove({
+                          homeFeedItemId: item._id,
+                          title: item.title,
+                        })
+                      }
                       className="grid size-9 place-items-center rounded-full bg-white/12 text-white hover:bg-red-500/20 hover:text-red-400 transition"
                     >
                       <Trash2 className="size-4" aria-hidden="true" />
@@ -191,6 +207,44 @@ export default function ReadLaterPage() {
           </div>
         )}
       </div>
+      <AlertDialog
+        open={pendingRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingRemove(null);
+          }
+        }}
+      >
+        <AlertDialogContent className="border border-white/10 bg-[#151a1f] text-white shadow-2xl shadow-black/40">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove from Read Later?</AlertDialogTitle>
+            <AlertDialogDescription className="text-white/68">
+              This Post will leave your Read Later list. It will still be
+              available from the Home Feed if it matches the current filters.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {pendingRemove !== null ? (
+            <p className="line-clamp-2 rounded-[8px] bg-white/8 px-3 py-2 text-sm font-bold text-white/86">
+              {pendingRemove.title}
+            </p>
+          ) : null}
+          <AlertDialogFooter className="border-white/10 bg-white/[0.03]">
+            <AlertDialogCancel className="border-white/12 bg-white/8 text-white hover:bg-white/14">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-500/16 text-red-200 hover:bg-red-500/24"
+              onClick={() => {
+                if (pendingRemove !== null) {
+                  void onRemove(pendingRemove.homeFeedItemId);
+                }
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ReadLaterShell>
   );
 }
