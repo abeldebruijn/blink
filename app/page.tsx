@@ -74,7 +74,7 @@ export default function Home() {
   const homeFeed = usePaginatedQuery(
     api.homeFeed.listPage,
     isSignedIn && readerReady ? { feed: selectedFeed } : "skip",
-    { initialNumItems: 20 },
+    { initialNumItems: 5 },
   );
 
   if (!isLoaded) {
