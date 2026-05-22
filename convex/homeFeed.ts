@@ -15,11 +15,11 @@ const maxHomeFeedItems = 100;
 const homeFeedBucketValidator = v.union(
   v.literal("unread"),
   v.literal("read"),
-  v.literal("saved"),
+  v.literal("readLater"),
   v.literal("liked"),
 );
 
-type HomeFeedBucket = "unread" | "read" | "saved" | "liked";
+type HomeFeedBucket = "unread" | "read" | "readLater" | "liked";
 
 const homeFeedBuckets = new DirectAggregate<{
   Key: [Id<"readers">, HomeFeedBucket, number];
@@ -74,11 +74,11 @@ function bucketEntries(item: Doc<"homeFeedItems">) {
     id: aggregateId(item._id, readBucket),
   });
 
-  if (item.savedAt !== undefined && item.savedAt !== null) {
+  if (item.readLaterAt !== undefined && item.readLaterAt !== null) {
     entries.push({
-      bucket: "saved",
-      key: [item.readerId, "saved", item.sortTime],
-      id: aggregateId(item._id, "saved"),
+      bucket: "readLater",
+      key: [item.readerId, "readLater", item.sortTime],
+      id: aggregateId(item._id, "readLater"),
     });
   }
 
@@ -239,12 +239,15 @@ export const list = query({
   },
   handler: async (ctx, args) => {
     const reader = await requireCurrentReader(ctx);
-    const [unread, read, saved, liked] = await homeFeedBuckets.countBatch(ctx, [
-      countBounds(reader._id, "unread"),
-      countBounds(reader._id, "read"),
-      countBounds(reader._id, "saved"),
-      countBounds(reader._id, "liked"),
-    ]);
+    const [unread, read, readLater, liked] = await homeFeedBuckets.countBatch(
+      ctx,
+      [
+        countBounds(reader._id, "unread"),
+        countBounds(reader._id, "read"),
+        countBounds(reader._id, "readLater"),
+        countBounds(reader._id, "liked"),
+      ],
+    );
     const page = await homeFeedBuckets.paginate(ctx, {
       ...countBounds(reader._id, args.feed),
       order: "desc",
@@ -288,8 +291,9 @@ export const list = query({
         canonicalUrl: post.canonicalUrl,
         readAt: item.readAt,
         isRead: item.readAt !== null,
-        savedAt: item.savedAt ?? null,
-        isSaved: item.savedAt !== undefined && item.savedAt !== null,
+        readLaterAt: item.readLaterAt ?? null,
+        isReadLater:
+          item.readLaterAt !== undefined && item.readLaterAt !== null,
         likedAt: item.likedAt ?? null,
         isLiked: item.likedAt !== undefined && item.likedAt !== null,
       });
@@ -297,7 +301,7 @@ export const list = query({
 
     return {
       items: results,
-      counts: { unread, read, saved, liked },
+      counts: { unread, read, readLater, liked },
     };
   },
 });
@@ -347,8 +351,9 @@ export const getReadingView = query({
       abstractStatus: post.abstractStatus ?? null,
       readAt: item.readAt,
       isRead: item.readAt !== null,
-      savedAt: item.savedAt ?? null,
-      isSaved: item.savedAt !== undefined && item.savedAt !== null,
+      readLaterAt: item.readLaterAt ?? null,
+      isReadLater:
+        item.readLaterAt !== undefined && item.readLaterAt !== null,
       likedAt: item.likedAt ?? null,
       isLiked: item.likedAt !== undefined && item.likedAt !== null,
     };
@@ -379,10 +384,10 @@ export const markRead = mutation({
   },
 });
 
-export const toggleSave = mutation({
+export const toggleReadLater = mutation({
   args: {
     homeFeedItemId: v.id("homeFeedItems"),
-    saved: v.boolean(),
+    readLater: v.boolean(),
   },
   handler: async (ctx, args) => {
     const reader = await requireCurrentReader(ctx);
@@ -393,7 +398,7 @@ export const toggleSave = mutation({
 
     const oldItem = item;
     await ctx.db.patch(args.homeFeedItemId, {
-      savedAt: args.saved ? Date.now() : null,
+      readLaterAt: args.readLater ? Date.now() : null,
       updatedAt: Date.now(),
     });
     const newItem = await ctx.db.get(args.homeFeedItemId);
@@ -446,21 +451,32 @@ export const backfillCurrentReaderHomeFeedBuckets = mutation({
   },
 });
 
-export const listSaved = query({
+export const listReadLater = query({
   args: {},
   handler: async (ctx) => {
     const reader = await requireCurrentReader(ctx);
-    const items = await ctx.db
-      .query("homeFeedItems")
-      .withIndex("by_readerId_and_sortTime", (q) =>
-        q.eq("readerId", reader._id),
-      )
-      .order("desc")
-      .collect();
+    const page = await homeFeedBuckets.paginate(ctx, {
+      ...countBounds(reader._id, "readLater"),
+      order: "desc",
+      pageSize: maxHomeFeedItems,
+    });
 
     const results = [];
-    for (const item of items) {
-      if (item.savedAt === undefined || item.savedAt === null) {
+    for (const aggregateItem of page.page) {
+      const itemId = ctx.db.normalizeId(
+        "homeFeedItems",
+        itemIdFromAggregateId(aggregateItem.id),
+      );
+      if (itemId === null) {
+        continue;
+      }
+      const item = await ctx.db.get(itemId);
+      if (
+        item === null ||
+        item.readerId !== reader._id ||
+        item.readLaterAt === undefined ||
+        item.readLaterAt === null
+      ) {
         continue;
       }
       const post = await ctx.db.get(item.postId);
@@ -487,7 +503,7 @@ export const listSaved = query({
         canonicalUrl: post.canonicalUrl,
         readAt: item.readAt,
         isRead: item.readAt !== null,
-        savedAt: item.savedAt,
+        readLaterAt: item.readLaterAt,
         likedAt: item.likedAt ?? null,
         isLiked: item.likedAt !== undefined && item.likedAt !== null,
       });

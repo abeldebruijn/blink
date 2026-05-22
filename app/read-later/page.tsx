@@ -21,7 +21,7 @@ function postDateLabel(timestamp: number) {
 export default function ReadLaterPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const ensureCurrentReader = useMutation(api.readers.ensureCurrent);
-  const toggleSave = useMutation(api.homeFeed.toggleSave);
+  const toggleReadLater = useMutation(api.homeFeed.toggleReadLater);
   const [ensuredUserId, setEnsuredUserId] = useState<string | null>(null);
   const [readerErrorUserId, setReaderErrorUserId] = useState<string | null>(
     null,
@@ -53,44 +53,44 @@ export default function ReadLaterPage() {
 
   const readerReady = isSignedIn === true && ensuredUserId === userId;
   const readerError = isSignedIn === true && readerErrorUserId === userId;
-  const savedItems = useQuery(
-    api.homeFeed.listSaved,
+  const readLaterItems = useQuery(
+    api.homeFeed.listReadLater,
     readerReady ? {} : "skip",
   );
 
   const isLoading =
     !isLoaded ||
-    (!readerError && isSignedIn === true && savedItems === undefined);
+    (!readerError && isSignedIn === true && readLaterItems === undefined);
 
   async function onRemove(homeFeedItemId: Id<"homeFeedItems">, title: string) {
-    const confirmed = window.confirm(`Remove "${title}" from Saved?`);
+    const confirmed = window.confirm(`Remove "${title}" from Read Later?`);
     if (!confirmed) {
       return;
     }
     try {
-      await toggleSave({ homeFeedItemId, saved: false });
+      await toggleReadLater({ homeFeedItemId, readLater: false });
     } catch (err) {
-      console.error("Failed to remove saved item:", err);
+      console.error("Failed to remove Read Later item:", err);
     }
   }
 
   if (!isLoaded || isLoading) {
-    return <SavedShell />;
+    return <ReadLaterShell />;
   }
 
   if (!isSignedIn) {
     return (
-      <SavedShell>
+      <ReadLaterShell>
         <section className="grid justify-items-center gap-4 py-28 text-center">
           <div className="grid size-16 place-items-center rounded-full bg-white/14">
             <Bookmark className="size-7" aria-hidden="true" />
           </div>
           <div className="grid max-w-[25rem] gap-3">
             <h2 className="text-3xl font-black leading-none">
-              Sign in to view Saved
+              Sign in to view Read Later
             </h2>
             <p className="text-base leading-7 text-white/72">
-              Saved articles belong to authenticated Readers.
+              Read Later belongs to authenticated Readers.
             </p>
           </div>
           <SignInButton mode="modal">
@@ -99,36 +99,36 @@ export default function ReadLaterPage() {
             </button>
           </SignInButton>
         </section>
-      </SavedShell>
+      </ReadLaterShell>
     );
   }
 
   if (readerError) {
     return (
-      <SavedShell>
+      <ReadLaterShell>
         <EmptyMessage
-          title="Saved Items unavailable"
-          body="Blink could not prepare this Reader's Saved Items."
+          title="Read Later unavailable"
+          body="Blink could not prepare this Reader's Read Later list."
         />
-      </SavedShell>
+      </ReadLaterShell>
     );
   }
 
   return (
-    <SavedShell>
+    <ReadLaterShell>
       <div className="grid gap-5">
         <h2 className="text-xl font-black uppercase tracking-[0.14em] text-white/60">
-          Saved Queue ({savedItems?.length ?? 0})
+          Read Later ({readLaterItems?.length ?? 0})
         </h2>
 
-        {savedItems && savedItems.length === 0 ? (
+        {readLaterItems && readLaterItems.length === 0 ? (
           <EmptyMessage
             title="Your queue is empty"
-            body="Save articles to read them later when you have time."
+            body="Add Posts to Read Later when you want to return to them."
           />
         ) : (
           <div className="grid gap-3">
-            {savedItems?.map((item) => {
+            {readLaterItems?.map((item) => {
               const host = siteHost(item.source.siteUrl ?? item.canonicalUrl);
               return (
                 <article
@@ -153,8 +153,8 @@ export default function ReadLaterPage() {
 
                     <button
                       type="button"
-                      title="Remove from Saved"
-                      aria-label="Remove from Saved"
+                      title="Remove from Read Later"
+                      aria-label="Remove from Read Later"
                       onClick={() => onRemove(item._id, item.title)}
                       className="grid size-9 place-items-center rounded-full bg-white/12 text-white hover:bg-red-500/20 hover:text-red-400 transition"
                     >
@@ -191,11 +191,11 @@ export default function ReadLaterPage() {
           </div>
         )}
       </div>
-    </SavedShell>
+    </ReadLaterShell>
   );
 }
 
-function SavedShell({ children }: { children?: React.ReactNode }) {
+function ReadLaterShell({ children }: { children?: React.ReactNode }) {
   return (
     <main
       className="min-h-screen bg-[#101418] text-white"

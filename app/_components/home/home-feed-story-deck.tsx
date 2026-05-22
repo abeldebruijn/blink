@@ -25,7 +25,7 @@ export function HomeFeedStoryDeck({ homeFeed }: { homeFeed: HomeFeedData }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const isProgrammaticScrolling = useRef(false);
   const markRead = useMutation(api.homeFeed.markRead);
-  const toggleSave = useMutation(api.homeFeed.toggleSave);
+  const toggleReadLater = useMutation(api.homeFeed.toggleReadLater);
   const toggleLike = useMutation(api.homeFeed.toggleLike);
   const feedSubscriptionCount = useQuery(
     api.feedSubscriptions.countForCurrentReader,
@@ -187,15 +187,15 @@ export function HomeFeedStoryDeck({ homeFeed }: { homeFeed: HomeFeedData }) {
           }}
         />
         <StoryActionButton
-          label="Save Post"
+          label="Read Later"
           icon={<Bookmark />}
-          active={activeItem?.isSaved ?? false}
+          active={activeItem?.isReadLater ?? false}
           disabled={activeItem === null}
           onClick={() => {
             if (activeItem !== null) {
-              void toggleSave({
+              void toggleReadLater({
                 homeFeedItemId: activeItem._id,
-                saved: !activeItem.isSaved,
+                readLater: !activeItem.isReadLater,
               });
             }
           }}

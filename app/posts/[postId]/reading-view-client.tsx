@@ -4,7 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
-import { ArrowLeft, Clock, ExternalLink, Bookmark, ThumbsUp, ThumbsDown } from "lucide-react";
+import {
+  ArrowLeft,
+  Bookmark,
+  Clock,
+  ExternalLink,
+  ThumbsDown,
+  ThumbsUp,
+} from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { BottomNav } from "@/app/_components/bottom-nav";
 import { siteHost } from "@/app/_components/home/feed-utils";
@@ -15,13 +22,13 @@ export function ReadingViewClient({ postId }: { postId: string }) {
   const { isLoaded, isSignedIn, user } = useUser();
   const ensureCurrentReader = useMutation(api.readers.ensureCurrent);
   const markRead = useMutation(api.homeFeed.markRead);
-  const toggleSave = useMutation(api.homeFeed.toggleSave);
+  const toggleReadLater = useMutation(api.homeFeed.toggleReadLater);
   const markedReadItemId = useRef<string | null>(null);
   const [ensuredUserId, setEnsuredUserId] = useState<string | null>(null);
   const [readerErrorUserId, setReaderErrorUserId] = useState<string | null>(
     null,
   );
-  const [isSaving, setIsSaving] = useState(false);
+  const [isUpdatingReadLater, setIsUpdatingReadLater] = useState(false);
   const [feedback, setFeedback] = useState<"like" | "dislike" | null>(null);
   const userId = user?.id;
 
@@ -90,18 +97,18 @@ export function ReadingViewClient({ postId }: { postId: string }) {
     }
   }, [markRead, readingView, router]);
 
-  const handleToggleSave = async () => {
+  const handleToggleReadLater = async () => {
     if (!readingView) return;
-    setIsSaving(true);
+    setIsUpdatingReadLater(true);
     try {
-      await toggleSave({
+      await toggleReadLater({
         homeFeedItemId: readingView.homeFeedItemId,
-        saved: !readingView.isSaved,
+        readLater: !readingView.isReadLater,
       });
     } catch (error) {
-      console.error("Failed to toggle save:", error);
+      console.error("Failed to toggle Read Later:", error);
     } finally {
-      setIsSaving(false);
+      setIsUpdatingReadLater(false);
     }
   };
 
@@ -148,17 +155,30 @@ export function ReadingViewClient({ postId }: { postId: string }) {
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={handleToggleSave}
-              disabled={isSaving}
+              onClick={handleToggleReadLater}
+              disabled={isUpdatingReadLater}
               className={`grid size-10 place-items-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-white/30 ${
-                readingView.isSaved
+                readingView.isReadLater
                   ? "bg-[#d8ef7f] text-[#101418] hover:bg-[#d8ef7f]/90"
                   : "bg-white/8 text-white hover:bg-white/12"
               }`}
-              aria-label={readingView.isSaved ? "Saved" : "Save for later"}
-              title={readingView.isSaved ? "Saved" : "Save for later"}
+              aria-label={
+                readingView.isReadLater
+                  ? "In Read Later"
+                  : "Add to Read Later"
+              }
+              title={
+                readingView.isReadLater
+                  ? "In Read Later"
+                  : "Add to Read Later"
+              }
             >
-              <Bookmark className={`size-5 ${readingView.isSaved ? "fill-current" : ""}`} aria-hidden="true" />
+              <Bookmark
+                className={`size-5 ${
+                  readingView.isReadLater ? "fill-current" : ""
+                }`}
+                aria-hidden="true"
+              />
             </button>
             <a
               href={readingView.canonicalUrl}

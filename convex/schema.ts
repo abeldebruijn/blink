@@ -115,7 +115,7 @@ export default defineSchema({
     publishedAt: v.union(v.number(), v.null()),
     discoveredAt: v.number(),
     readAt: v.union(v.number(), v.null()),
-    savedAt: v.optional(v.union(v.number(), v.null())),
+    readLaterAt: v.optional(v.union(v.number(), v.null())),
     likedAt: v.optional(v.union(v.number(), v.null())),
     createdAt: v.number(),
     updatedAt: v.number(),
