@@ -2,20 +2,34 @@ import Link from "next/link";
 import { Plus, Rss } from "lucide-react";
 import { BottomNav } from "../bottom-nav";
 import { HomeFeedStoryDeck } from "./home-feed-story-deck";
-import type { HomeFeedData } from "./types";
+import type {
+  HomeFeedCounts,
+  HomeFeedItems,
+  HomeFeedPaginationStatus,
+} from "./types";
 
 export function AuthenticatedHomeFeed({
-  homeFeed,
+  homeFeedItems,
+  homeFeedCounts,
+  paginationStatus,
+  loadMoreHomeFeedItems,
   readerReady,
   readerError,
 }: {
-  homeFeed: HomeFeedData | undefined;
+  homeFeedItems: HomeFeedItems;
+  homeFeedCounts: HomeFeedCounts | undefined;
+  paginationStatus: HomeFeedPaginationStatus;
+  loadMoreHomeFeedItems: (numItems: number) => void;
   readerReady: boolean;
   readerError: boolean;
 }) {
-  const isLoading = !readerError && (!readerReady || homeFeed === undefined);
+  const isLoading =
+    !readerError &&
+    (!readerReady ||
+      homeFeedCounts === undefined ||
+      paginationStatus === "LoadingFirstPage");
   const hasPosts =
-    (homeFeed?.counts.unread ?? 0) + (homeFeed?.counts.read ?? 0) > 0;
+    (homeFeedCounts?.unread ?? 0) + (homeFeedCounts?.read ?? 0) > 0;
   const useFeedTheme = isLoading || hasPosts;
 
   return (
@@ -59,8 +73,13 @@ export function AuthenticatedHomeFeed({
                 Blink could not prepare this Reader&apos;s Home Feed.
               </p>
             </div>
-          ) : hasPosts && homeFeed !== undefined ? (
-            <HomeFeedStoryDeck homeFeed={homeFeed} />
+          ) : hasPosts && homeFeedCounts !== undefined ? (
+            <HomeFeedStoryDeck
+              homeFeedItems={homeFeedItems}
+              homeFeedCounts={homeFeedCounts}
+              paginationStatus={paginationStatus}
+              loadMoreHomeFeedItems={loadMoreHomeFeedItems}
+            />
           ) : (
             <section
               aria-labelledby="empty-home-feed-title"

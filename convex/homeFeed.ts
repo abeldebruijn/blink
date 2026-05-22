@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { DirectAggregate } from "@convex-dev/aggregate";
+import { paginationOptsValidator } from "convex/server";
 import {
   internalQuery,
   internalMutation,
@@ -155,6 +156,46 @@ function countBounds(readerId: Id<"readers">, bucket: HomeFeedBucket) {
   };
 }
 
+async function homeFeedItemView(
+  ctx: QueryCtx,
+  readerId: Id<"readers">,
+  homeFeedItemId: Id<"homeFeedItems">,
+) {
+  const item = await ctx.db.get(homeFeedItemId);
+  if (item === null || item.readerId !== readerId) {
+    return null;
+  }
+  const post = await ctx.db.get(item.postId);
+  if (post === null) {
+    return null;
+  }
+
+  return {
+    _id: item._id,
+    postId: item.postId,
+    source: {
+      title: post.sourceTitle,
+      siteUrl: post.sourceSiteUrl,
+      feedUrl: post.sourceFeedUrl,
+    },
+    title: post.rssTitle,
+    abstract: post.abstract,
+    abstractSource: post.abstractSource,
+    firecrawlStatus: post.firecrawlStatus ?? null,
+    abstractStatus: post.abstractStatus ?? null,
+    headerImageUrl: post.headerImageUrl,
+    publishedAt: post.publishedAt,
+    discoveredAt: post.discoveredAt,
+    canonicalUrl: post.canonicalUrl,
+    readAt: item.readAt,
+    isRead: item.readAt !== null,
+    readLaterAt: item.readLaterAt ?? null,
+    isReadLater: item.readLaterAt !== undefined && item.readLaterAt !== null,
+    likedAt: item.likedAt ?? null,
+    isLiked: item.likedAt !== undefined && item.likedAt !== null,
+  };
+}
+
 function postAbstractFields(
   firecrawlVisitedAt: number | null,
   firecrawlPageSummary: string | null,
@@ -232,12 +273,9 @@ async function materializeHomeFeedItem(
   return existing._id;
 }
 
-export const list = query({
-  args: {
-    limit: v.number(),
-    feed: homeFeedBucketValidator,
-  },
-  handler: async (ctx, args) => {
+export const counts = query({
+  args: {},
+  handler: async (ctx) => {
     const reader = await requireCurrentReader(ctx);
     const [unread, read, readLater, liked] = await homeFeedBuckets.countBatch(
       ctx,
@@ -248,10 +286,23 @@ export const list = query({
         countBounds(reader._id, "liked"),
       ],
     );
+
+    return { unread, read, readLater, liked };
+  },
+});
+
+export const listPage = query({
+  args: {
+    feed: homeFeedBucketValidator,
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const reader = await requireCurrentReader(ctx);
     const page = await homeFeedBuckets.paginate(ctx, {
       ...countBounds(reader._id, args.feed),
+      cursor: args.paginationOpts.cursor ?? undefined,
       order: "desc",
-      pageSize: boundedLimit(args.limit),
+      pageSize: boundedLimit(args.paginationOpts.numItems),
     });
 
     const results = [];
@@ -263,45 +314,16 @@ export const list = query({
       if (itemId === null) {
         continue;
       }
-      const item = await ctx.db.get(itemId);
-      if (item === null || item.readerId !== reader._id) {
-        continue;
+      const view = await homeFeedItemView(ctx, reader._id, itemId);
+      if (view !== null) {
+        results.push(view);
       }
-      const post = await ctx.db.get(item.postId);
-      if (post === null) {
-        continue;
-      }
-
-      results.push({
-        _id: item._id,
-        postId: item.postId,
-        source: {
-          title: post.sourceTitle,
-          siteUrl: post.sourceSiteUrl,
-          feedUrl: post.sourceFeedUrl,
-        },
-        title: post.rssTitle,
-        abstract: post.abstract,
-        abstractSource: post.abstractSource,
-        firecrawlStatus: post.firecrawlStatus ?? null,
-        abstractStatus: post.abstractStatus ?? null,
-        headerImageUrl: post.headerImageUrl,
-        publishedAt: post.publishedAt,
-        discoveredAt: post.discoveredAt,
-        canonicalUrl: post.canonicalUrl,
-        readAt: item.readAt,
-        isRead: item.readAt !== null,
-        readLaterAt: item.readLaterAt ?? null,
-        isReadLater:
-          item.readLaterAt !== undefined && item.readLaterAt !== null,
-        likedAt: item.likedAt ?? null,
-        isLiked: item.likedAt !== undefined && item.likedAt !== null,
-      });
     }
 
     return {
-      items: results,
-      counts: { unread, read, readLater, liked },
+      page: results,
+      isDone: page.isDone,
+      continueCursor: page.cursor,
     };
   },
 });

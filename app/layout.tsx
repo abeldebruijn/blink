@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   description:
     "Read rss feeds at a glance. Subscribe to your favorite feeds and stay updated with the latest news.",
   icons: {
-    icon: "/convex.svg",
+    icon: "/favicon.png",
   },
 };
 

@@ -17,9 +17,27 @@ import { FeedFilterPopover } from "./feed-filter-popover";
 import { FilteredHomeFeedEmpty } from "./filtered-home-feed-empty";
 import { HomeFeedStoryCard } from "./home-feed-story-card";
 import { StoryActionButton } from "./story-action-button";
-import type { HomeFeedData, HomeFeedFilter } from "./types";
+import type {
+  HomeFeedCounts,
+  HomeFeedFilter,
+  HomeFeedItems,
+  HomeFeedPaginationStatus,
+} from "./types";
 
-export function HomeFeedStoryDeck({ homeFeed }: { homeFeed: HomeFeedData }) {
+const lazyLoadPageSize = 20;
+const lazyLoadThreshold = 3;
+
+export function HomeFeedStoryDeck({
+  homeFeedItems,
+  homeFeedCounts,
+  paginationStatus,
+  loadMoreHomeFeedItems,
+}: {
+  homeFeedItems: HomeFeedItems;
+  homeFeedCounts: HomeFeedCounts;
+  paginationStatus: HomeFeedPaginationStatus;
+  loadMoreHomeFeedItems: (numItems: number) => void;
+}) {
   const containerRef = useRef<HTMLElement | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -34,13 +52,24 @@ export function HomeFeedStoryDeck({ homeFeed }: { homeFeed: HomeFeedData }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedFeed = parseFeedFilter(searchParams.get("feed"));
-  const counts = homeFeed.counts satisfies Record<HomeFeedFilter, number>;
-  const visibleItems = homeFeed.items;
+  const counts = homeFeedCounts satisfies Record<HomeFeedFilter, number>;
+  const visibleItems = homeFeedItems;
   const activeItem = visibleItems[activeIndex] ?? null;
+  const canLoadMore = paginationStatus === "CanLoadMore";
 
   useEffect(() => {
     containerRef.current?.scrollTo({ top: 0 });
   }, [selectedFeed]);
+
+  useEffect(() => {
+    if (
+      canLoadMore &&
+      visibleItems.length > 0 &&
+      activeIndex >= visibleItems.length - lazyLoadThreshold
+    ) {
+      loadMoreHomeFeedItems(lazyLoadPageSize);
+    }
+  }, [activeIndex, canLoadMore, loadMoreHomeFeedItems, visibleItems.length]);
 
   function scrollToPost(index: number) {
     const container = containerRef.current;
@@ -111,6 +140,16 @@ export function HomeFeedStoryDeck({ homeFeed }: { homeFeed: HomeFeedData }) {
     setPopoverOpen(false);
   }
 
+  function goToNextPost() {
+    if (activeIndex < visibleItems.length - 1) {
+      scrollToPost(activeIndex + 1);
+      return;
+    }
+    if (canLoadMore) {
+      loadMoreHomeFeedItems(lazyLoadPageSize);
+    }
+  }
+
   return (
     <section
       ref={containerRef}
@@ -118,11 +157,11 @@ export function HomeFeedStoryDeck({ homeFeed }: { homeFeed: HomeFeedData }) {
       className="relative h-screen snap-y snap-mandatory overflow-y-auto bg-[#101418] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       <header className="fixed top-0 left-1/2 z-50 grid w-full max-w-[680px] -translate-x-1/2 grid-cols-[1fr_auto_1fr] items-center border-b border-white/5 bg-[#101418]/60 px-4 py-3 backdrop-blur-md sm:p-5">
-        <div>
+        <Link href="/?feed=unread" aria-label="Show unread feed">
           <h1 className="text-2xl font-black italic leading-none text-white sm:text-3xl">
             Blink
           </h1>
-        </div>
+        </Link>
         <Link
           href="/feeds/all"
           className="max-w-[9.5rem] truncate rounded-full bg-white/14 px-2.5 py-1.5 text-[11px] font-black text-white transition hover:bg-white/20 sm:max-w-none sm:px-3 sm:text-xs"
@@ -134,11 +173,7 @@ export function HomeFeedStoryDeck({ homeFeed }: { homeFeed: HomeFeedData }) {
           <FeedFilterPopover
             selectedFeed={selectedFeed}
             position={visibleItems.length === 0 ? 0 : activeIndex + 1}
-            total={
-              visibleItems.length === 0
-                ? counts[selectedFeed]
-                : visibleItems.length
-            }
+            total={counts[selectedFeed]}
             counts={counts}
             open={popoverOpen}
             onOpenChange={setPopoverOpen}
@@ -204,10 +239,8 @@ export function HomeFeedStoryDeck({ homeFeed }: { homeFeed: HomeFeedData }) {
         <StoryActionButton
           label="Next Post"
           icon={<ChevronDown />}
-          onClick={() =>
-            scrollToPost(Math.min(visibleItems.length - 1, activeIndex + 1))
-          }
-          disabled={activeIndex === visibleItems.length - 1}
+          onClick={goToNextPost}
+          disabled={activeIndex === visibleItems.length - 1 && !canLoadMore}
         />
       </div>
     </section>
