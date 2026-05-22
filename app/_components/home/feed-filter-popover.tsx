@@ -44,7 +44,7 @@ export function FeedFilterPopover({
         sideOffset={8}
         className="w-56 border border-white/10 bg-[#151a1f]/95 p-2 text-white backdrop-blur-xl"
       >
-        {(["unread", "read", "saved", "liked"] as const).map((feed) => (
+        {(["unread", "read", "readLater", "liked"] as const).map((feed) => (
           <button
             key={feed}
             type="button"

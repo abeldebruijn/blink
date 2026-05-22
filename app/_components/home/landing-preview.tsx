@@ -117,7 +117,7 @@ export function LandingPreview({ isSignedIn }: { isSignedIn: boolean }) {
 
         <div className="absolute bottom-36 right-4 z-10 grid gap-3">
           <StoryActionButton label="Like" active icon={<Heart />} />
-          <StoryActionButton label="Save" icon={<Bookmark />} />
+          <StoryActionButton label="Read Later" icon={<Bookmark />} />
           <StoryActionButton label="Tune down" icon={<ThumbsDown />} />
           <StoryActionButton label="Next" icon={<ChevronDown />} />
         </div>

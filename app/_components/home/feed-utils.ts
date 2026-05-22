@@ -1,7 +1,7 @@
 import type { HomeFeedFilter, HomeFeedItem, HomeFeedItems } from "./types";
 
 export function parseFeedFilter(value: string | null): HomeFeedFilter {
-  if (value === "read" || value === "saved" || value === "liked") {
+  if (value === "read" || value === "readLater" || value === "liked") {
     return value;
   }
   return "unread";
@@ -14,7 +14,7 @@ export function filterHomeFeedItems(
   if (selectedFeed === "read") {
     return items.filter((item) => item.isRead);
   }
-  if (selectedFeed === "saved" || selectedFeed === "liked") {
+  if (selectedFeed === "readLater" || selectedFeed === "liked") {
     return [];
   }
   return items.filter((item) => !item.isRead);

@@ -7,11 +7,11 @@ export type HomeFeedCounts = FunctionReturnType<typeof api.homeFeed.counts>;
 export type HomeFeedItems = HomeFeedPage["page"];
 export type HomeFeedItem = HomeFeedItems[number];
 export type HomeFeedPaginationStatus = PaginationStatus;
-export type HomeFeedFilter = "unread" | "read" | "saved" | "liked";
+export type HomeFeedFilter = "unread" | "read" | "readLater" | "liked";
 
 export const feedFilterLabels: Record<HomeFeedFilter, string> = {
   unread: "Unread",
   read: "Read",
-  saved: "Saved for later",
+  readLater: "Read Later",
   liked: "Liked",
 };

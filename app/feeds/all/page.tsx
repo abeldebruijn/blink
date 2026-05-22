@@ -19,6 +19,16 @@ import {
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { BottomNav } from "@/app/_components/bottom-nav";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type EditingState =
   | { kind: "rename"; id: Id<"feedSubscriptions">; value: string }
@@ -74,6 +84,10 @@ export default function AllFeedsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [pendingUnsubscribe, setPendingUnsubscribe] = useState<{
+    feedSubscriptionId: Id<"feedSubscriptions">;
+    title: string;
+  } | null>(null);
   const userId = user?.id;
 
   useEffect(() => {
@@ -205,21 +219,12 @@ export default function AllFeedsPage() {
     }
   }
 
-  async function onUnsubscribe(
-    feedSubscriptionId: Id<"feedSubscriptions">,
-    title: string,
-  ) {
-    const confirmed = window.confirm(
-      `Unsubscribe from "${title}"? This removes it from your Feed Subscriptions.`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
+  async function onUnsubscribe(feedSubscriptionId: Id<"feedSubscriptions">) {
     setBusyId(feedSubscriptionId);
     setError(null);
     try {
       await unsubscribeFromFeed({ feedSubscriptionId });
+      setPendingUnsubscribe(null);
     } catch (unsubscribeError) {
       setError(
         unsubscribeError instanceof Error
@@ -410,7 +415,10 @@ export default function AllFeedsPage() {
                         disabled={isBusy}
                         danger
                         onClick={() =>
-                          onUnsubscribe(subscription._id, subscription.title)
+                          setPendingUnsubscribe({
+                            feedSubscriptionId: subscription._id,
+                            title: subscription.title,
+                          })
                         }
                       />
                     </div>
@@ -452,6 +460,44 @@ export default function AllFeedsPage() {
           </div>
         )}
       </div>
+      <AlertDialog
+        open={pendingUnsubscribe !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingUnsubscribe(null);
+          }
+        }}
+      >
+        <AlertDialogContent className="border border-white/10 bg-[#151a1f] text-white shadow-2xl shadow-black/40">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsubscribe from Feed?</AlertDialogTitle>
+            <AlertDialogDescription className="text-white/68">
+              This removes the Feed Subscription from this Reader. Existing
+              shared Posts and Feed data are not deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {pendingUnsubscribe !== null ? (
+            <p className="line-clamp-2 rounded-[8px] bg-white/8 px-3 py-2 text-sm font-bold text-white/86">
+              {pendingUnsubscribe.title}
+            </p>
+          ) : null}
+          <AlertDialogFooter className="border-white/10 bg-white/[0.03]">
+            <AlertDialogCancel className="border-white/12 bg-white/8 text-white hover:bg-white/14">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-500/16 text-red-200 hover:bg-red-500/24"
+              onClick={() => {
+                if (pendingUnsubscribe !== null) {
+                  void onUnsubscribe(pendingUnsubscribe.feedSubscriptionId);
+                }
+              }}
+            >
+              Unsubscribe
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </FeedsShell>
   );
 }
