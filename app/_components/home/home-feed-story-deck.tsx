@@ -12,19 +12,21 @@ import {
   ThumbsDown,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
-import { filterHomeFeedItems, parseFeedFilter } from "./feed-utils";
+import { parseFeedFilter } from "./feed-utils";
 import { FeedFilterPopover } from "./feed-filter-popover";
 import { FilteredHomeFeedEmpty } from "./filtered-home-feed-empty";
 import { HomeFeedStoryCard } from "./home-feed-story-card";
 import { StoryActionButton } from "./story-action-button";
-import type { HomeFeedFilter, HomeFeedItems } from "./types";
+import type { HomeFeedData, HomeFeedFilter } from "./types";
 
-export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
+export function HomeFeedStoryDeck({ homeFeed }: { homeFeed: HomeFeedData }) {
   const containerRef = useRef<HTMLElement | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const isProgrammaticScrolling = useRef(false);
   const markRead = useMutation(api.homeFeed.markRead);
+  const toggleSave = useMutation(api.homeFeed.toggleSave);
+  const toggleLike = useMutation(api.homeFeed.toggleLike);
   const feedSubscriptionCount = useQuery(
     api.feedSubscriptions.countForCurrentReader,
     {},
@@ -32,13 +34,9 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedFeed = parseFeedFilter(searchParams.get("feed"));
-  const counts = {
-    unread: items.filter((item) => !item.isRead).length,
-    read: items.filter((item) => item.isRead).length,
-    saved: 0,
-    liked: 0,
-  } satisfies Record<HomeFeedFilter, number>;
-  const visibleItems = filterHomeFeedItems(items, selectedFeed);
+  const counts = homeFeed.counts satisfies Record<HomeFeedFilter, number>;
+  const visibleItems = homeFeed.items;
+  const activeItem = visibleItems[activeIndex] ?? null;
 
   useEffect(() => {
     containerRef.current?.scrollTo({ top: 0 });
@@ -152,7 +150,7 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
       {visibleItems.length === 0 ? (
         <FilteredHomeFeedEmpty
           selectedFeed={selectedFeed}
-          totalCount={items.length}
+          totalCount={counts.unread + counts.read}
         />
       ) : null}
       {visibleItems.map((item, index) => (
@@ -174,8 +172,34 @@ export function HomeFeedStoryDeck({ items }: { items: HomeFeedItems }) {
           onClick={() => scrollToPost(Math.max(0, activeIndex - 1))}
           disabled={activeIndex === 0}
         />
-        <StoryActionButton label="Like Post" icon={<Heart />} active />
-        <StoryActionButton label="Save Post" icon={<Bookmark />} />
+        <StoryActionButton
+          label="Like Post"
+          icon={<Heart />}
+          active={activeItem?.isLiked ?? false}
+          disabled={activeItem === null}
+          onClick={() => {
+            if (activeItem !== null) {
+              void toggleLike({
+                homeFeedItemId: activeItem._id,
+                liked: !activeItem.isLiked,
+              });
+            }
+          }}
+        />
+        <StoryActionButton
+          label="Save Post"
+          icon={<Bookmark />}
+          active={activeItem?.isSaved ?? false}
+          disabled={activeItem === null}
+          onClick={() => {
+            if (activeItem !== null) {
+              void toggleSave({
+                homeFeedItemId: activeItem._id,
+                saved: !activeItem.isSaved,
+              });
+            }
+          }}
+        />
         <StoryActionButton label="Dislike Post" icon={<ThumbsDown />} />
         <StoryActionButton
           label="Next Post"

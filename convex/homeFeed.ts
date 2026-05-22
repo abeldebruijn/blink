@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { DirectAggregate } from "@convex-dev/aggregate";
 import {
   internalQuery,
   internalMutation,
@@ -8,8 +9,22 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { components } from "./_generated/api";
 
 const maxHomeFeedItems = 100;
+const homeFeedBucketValidator = v.union(
+  v.literal("unread"),
+  v.literal("read"),
+  v.literal("saved"),
+  v.literal("liked"),
+);
+
+type HomeFeedBucket = "unread" | "read" | "saved" | "liked";
+
+const homeFeedBuckets = new DirectAggregate<{
+  Key: [Id<"readers">, HomeFeedBucket, number];
+  Id: string;
+}>(components.homeFeedBuckets);
 
 async function requireCurrentReader(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -39,6 +54,105 @@ function sortTimeForPost(
   post: Pick<Doc<"posts">, "publishedAt" | "discoveredAt">,
 ) {
   return post.publishedAt ?? post.discoveredAt;
+}
+
+function aggregateId(itemId: Id<"homeFeedItems">, bucket: HomeFeedBucket) {
+  return `${itemId}:${bucket}`;
+}
+
+function bucketEntries(item: Doc<"homeFeedItems">) {
+  const entries: Array<{
+    bucket: HomeFeedBucket;
+    key: [Id<"readers">, HomeFeedBucket, number];
+    id: string;
+  }> = [];
+  const readBucket = item.readAt === null ? "unread" : "read";
+
+  entries.push({
+    bucket: readBucket,
+    key: [item.readerId, readBucket, item.sortTime],
+    id: aggregateId(item._id, readBucket),
+  });
+
+  if (item.savedAt !== undefined && item.savedAt !== null) {
+    entries.push({
+      bucket: "saved",
+      key: [item.readerId, "saved", item.sortTime],
+      id: aggregateId(item._id, "saved"),
+    });
+  }
+
+  if (item.likedAt !== undefined && item.likedAt !== null) {
+    entries.push({
+      bucket: "liked",
+      key: [item.readerId, "liked", item.sortTime],
+      id: aggregateId(item._id, "liked"),
+    });
+  }
+
+  return entries;
+}
+
+async function insertBucketEntries(ctx: MutationCtx, item: Doc<"homeFeedItems">) {
+  for (const entry of bucketEntries(item)) {
+    await homeFeedBuckets.insertIfDoesNotExist(ctx, {
+      key: entry.key,
+      id: entry.id,
+    });
+  }
+}
+
+async function replaceBucketEntries(
+  ctx: MutationCtx,
+  oldItem: Doc<"homeFeedItems">,
+  newItem: Doc<"homeFeedItems">,
+) {
+  const oldEntries = new Map(
+    bucketEntries(oldItem).map((entry) => [entry.bucket, entry]),
+  );
+  const newEntries = new Map(
+    bucketEntries(newItem).map((entry) => [entry.bucket, entry]),
+  );
+
+  for (const [bucket, oldEntry] of oldEntries) {
+    const newEntry = newEntries.get(bucket);
+    if (newEntry === undefined) {
+      await homeFeedBuckets.deleteIfExists(ctx, {
+        key: oldEntry.key,
+        id: oldEntry.id,
+      });
+      continue;
+    }
+
+    await homeFeedBuckets.replaceOrInsert(
+      ctx,
+      { key: oldEntry.key, id: oldEntry.id },
+      { key: newEntry.key },
+    );
+  }
+
+  for (const [bucket, newEntry] of newEntries) {
+    if (oldEntries.has(bucket)) {
+      continue;
+    }
+    await homeFeedBuckets.insertIfDoesNotExist(ctx, {
+      key: newEntry.key,
+      id: newEntry.id,
+    });
+  }
+}
+
+function itemIdFromAggregateId(id: string) {
+  return id.split(":")[0] ?? "";
+}
+
+function countBounds(readerId: Id<"readers">, bucket: HomeFeedBucket) {
+  return {
+    namespace: undefined,
+    bounds: {
+      prefix: [readerId, bucket] as [Id<"readers">, HomeFeedBucket],
+    },
+  };
 }
 
 function postAbstractFields(
@@ -98,33 +212,58 @@ async function materializeHomeFeedItem(
     .unique();
 
   if (existing === null) {
-    return await ctx.db.insert("homeFeedItems", {
+    const homeFeedItemId = await ctx.db.insert("homeFeedItems", {
       ...fields,
       readAt: null,
       createdAt: now,
     });
+    const item = await ctx.db.get(homeFeedItemId);
+    if (item !== null) {
+      await insertBucketEntries(ctx, item);
+    }
+    return homeFeedItemId;
   }
 
   await ctx.db.patch(existing._id, fields);
+  const updated = await ctx.db.get(existing._id);
+  if (updated !== null) {
+    await replaceBucketEntries(ctx, existing, updated);
+  }
   return existing._id;
 }
 
 export const list = query({
   args: {
     limit: v.number(),
+    feed: homeFeedBucketValidator,
   },
   handler: async (ctx, args) => {
     const reader = await requireCurrentReader(ctx);
-    const items = await ctx.db
-      .query("homeFeedItems")
-      .withIndex("by_readerId_and_sortTime", (q) =>
-        q.eq("readerId", reader._id),
-      )
-      .order("desc")
-      .take(boundedLimit(args.limit));
+    const [unread, read, saved, liked] = await homeFeedBuckets.countBatch(ctx, [
+      countBounds(reader._id, "unread"),
+      countBounds(reader._id, "read"),
+      countBounds(reader._id, "saved"),
+      countBounds(reader._id, "liked"),
+    ]);
+    const page = await homeFeedBuckets.paginate(ctx, {
+      ...countBounds(reader._id, args.feed),
+      order: "desc",
+      pageSize: boundedLimit(args.limit),
+    });
 
     const results = [];
-    for (const item of items) {
+    for (const aggregateItem of page.page) {
+      const itemId = ctx.db.normalizeId(
+        "homeFeedItems",
+        itemIdFromAggregateId(aggregateItem.id),
+      );
+      if (itemId === null) {
+        continue;
+      }
+      const item = await ctx.db.get(itemId);
+      if (item === null || item.readerId !== reader._id) {
+        continue;
+      }
       const post = await ctx.db.get(item.postId);
       if (post === null) {
         continue;
@@ -149,10 +288,17 @@ export const list = query({
         canonicalUrl: post.canonicalUrl,
         readAt: item.readAt,
         isRead: item.readAt !== null,
+        savedAt: item.savedAt ?? null,
+        isSaved: item.savedAt !== undefined && item.savedAt !== null,
+        likedAt: item.likedAt ?? null,
+        isLiked: item.likedAt !== undefined && item.likedAt !== null,
       });
     }
 
-    return results;
+    return {
+      items: results,
+      counts: { unread, read, saved, liked },
+    };
   },
 });
 
@@ -203,6 +349,8 @@ export const getReadingView = query({
       isRead: item.readAt !== null,
       savedAt: item.savedAt ?? null,
       isSaved: item.savedAt !== undefined && item.savedAt !== null,
+      likedAt: item.likedAt ?? null,
+      isLiked: item.likedAt !== undefined && item.likedAt !== null,
     };
   },
 });
@@ -219,10 +367,15 @@ export const markRead = mutation({
       throw new ConvexError("Home feed item not found");
     }
 
+    const oldItem = item;
     await ctx.db.patch(args.homeFeedItemId, {
       readAt: args.read ? Date.now() : null,
       updatedAt: Date.now(),
     });
+    const newItem = await ctx.db.get(args.homeFeedItemId);
+    if (newItem !== null) {
+      await replaceBucketEntries(ctx, oldItem, newItem);
+    }
   },
 });
 
@@ -238,10 +391,58 @@ export const toggleSave = mutation({
       throw new ConvexError("Home feed item not found");
     }
 
+    const oldItem = item;
     await ctx.db.patch(args.homeFeedItemId, {
       savedAt: args.saved ? Date.now() : null,
       updatedAt: Date.now(),
     });
+    const newItem = await ctx.db.get(args.homeFeedItemId);
+    if (newItem !== null) {
+      await replaceBucketEntries(ctx, oldItem, newItem);
+    }
+  },
+});
+
+export const toggleLike = mutation({
+  args: {
+    homeFeedItemId: v.id("homeFeedItems"),
+    liked: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const reader = await requireCurrentReader(ctx);
+    const item = await ctx.db.get(args.homeFeedItemId);
+    if (item === null || item.readerId !== reader._id) {
+      throw new ConvexError("Home feed item not found");
+    }
+
+    const oldItem = item;
+    await ctx.db.patch(args.homeFeedItemId, {
+      likedAt: args.liked ? Date.now() : null,
+      updatedAt: Date.now(),
+    });
+    const newItem = await ctx.db.get(args.homeFeedItemId);
+    if (newItem !== null) {
+      await replaceBucketEntries(ctx, oldItem, newItem);
+    }
+  },
+});
+
+export const backfillCurrentReaderHomeFeedBuckets = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const reader = await requireCurrentReader(ctx);
+    const items = await ctx.db
+      .query("homeFeedItems")
+      .withIndex("by_readerId_and_sortTime", (q) =>
+        q.eq("readerId", reader._id),
+      )
+      .take(500);
+
+    for (const item of items) {
+      await insertBucketEntries(ctx, item);
+    }
+
+    return { backfilled: items.length };
   },
 });
 
@@ -287,6 +488,8 @@ export const listSaved = query({
         readAt: item.readAt,
         isRead: item.readAt !== null,
         savedAt: item.savedAt,
+        likedAt: item.likedAt ?? null,
+        isLiked: item.likedAt !== undefined && item.likedAt !== null,
       });
     }
 

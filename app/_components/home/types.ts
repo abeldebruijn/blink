@@ -1,8 +1,9 @@
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 
-export type HomeFeedItems = FunctionReturnType<typeof api.homeFeed.list>;
-export type HomeFeedItem = HomeFeedItems[number];
+export type HomeFeedData = FunctionReturnType<typeof api.homeFeed.list>;
+export type HomeFeedItems = HomeFeedData["items"];
+export type HomeFeedItem = HomeFeedData["items"][number];
 export type HomeFeedFilter = "unread" | "read" | "saved" | "liked";
 
 export const feedFilterLabels: Record<HomeFeedFilter, string> = {

@@ -2,19 +2,20 @@ import Link from "next/link";
 import { Plus, Rss } from "lucide-react";
 import { BottomNav } from "../bottom-nav";
 import { HomeFeedStoryDeck } from "./home-feed-story-deck";
-import type { HomeFeedItems } from "./types";
+import type { HomeFeedData } from "./types";
 
 export function AuthenticatedHomeFeed({
   homeFeed,
   readerReady,
   readerError,
 }: {
-  homeFeed: HomeFeedItems | undefined;
+  homeFeed: HomeFeedData | undefined;
   readerReady: boolean;
   readerError: boolean;
 }) {
   const isLoading = !readerError && (!readerReady || homeFeed === undefined);
-  const hasPosts = (homeFeed?.length ?? 0) > 0;
+  const hasPosts =
+    (homeFeed?.counts.unread ?? 0) + (homeFeed?.counts.read ?? 0) > 0;
   const useFeedTheme = isLoading || hasPosts;
 
   return (
@@ -58,8 +59,8 @@ export function AuthenticatedHomeFeed({
                 Blink could not prepare this Reader&apos;s Home Feed.
               </p>
             </div>
-          ) : hasPosts ? (
-            <HomeFeedStoryDeck items={homeFeed ?? []} />
+          ) : hasPosts && homeFeed !== undefined ? (
+            <HomeFeedStoryDeck homeFeed={homeFeed} />
           ) : (
             <section
               aria-labelledby="empty-home-feed-title"
