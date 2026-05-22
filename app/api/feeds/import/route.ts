@@ -6,7 +6,6 @@ import { initialImportWorkflow } from "@/workflows/imports";
 export async function POST(request: Request) {
   try {
     const reader = await requireCurrentReader();
-    console.log("TEST", reader);
     const body = (await request.json()) as { submittedFeedUrl?: unknown };
 
     if (typeof body.submittedFeedUrl !== "string") {
@@ -20,7 +19,6 @@ export async function POST(request: Request) {
     await start(initialImportWorkflow, [reader._id, submittedFeedUrl]);
     return Response.json({ started: true });
   } catch (error) {
-    console.error(error);
     return jsonError(error);
   }
 }

@@ -169,3 +169,17 @@ export const unsubscribeFromFeed = mutation({
     await ctx.db.delete(args.feedSubscriptionId);
   },
 });
+
+export const listAllFeeds = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireCurrentReader(ctx);
+    const feeds = await ctx.db.query("feeds").collect();
+    return feeds.map((feed) => ({
+      _id: feed._id,
+      title: feed.title,
+      canonicalFeedUrl: feed.canonicalFeedUrl,
+      siteUrl: feed.siteUrl,
+    }));
+  },
+});

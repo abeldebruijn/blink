@@ -171,9 +171,11 @@ async function upsertPendingPost(
 ) {
   "use step";
 
+  const { rssImageUrl, ...rest } = args;
+
   await convex().mutation(api.importWorkflow.upsertPost, {
     serviceToken: serviceToken(),
-    ...args,
+    ...rest,
     firecrawlStatus: "pending",
     firecrawlVisitedAt: null,
     firecrawlPageContent: null,
@@ -181,7 +183,7 @@ async function upsertPendingPost(
     firecrawlError: null,
     abstractStatus: "pending",
     abstractError: null,
-    headerImageUrl: args.rssImageUrl,
+    headerImageUrl: rssImageUrl,
   });
 }
 
@@ -253,6 +255,55 @@ async function generatePostAbstract(content: string, title: string) {
   return await generateAbstract(content, title);
 }
 
+async function upsertExistingPost(args: {
+  feedId: Id<"feeds"> | null;
+  feedImportRunId: Id<"feedImportRuns"> | null;
+  readerId: Id<"readers">;
+  sourceTitle: string;
+  sourceSiteUrl: string | null;
+  sourceFeedUrl: string | null;
+  rssTitle: string;
+  rssDescription: string | null;
+  rssLinkUrl: string;
+  canonicalUrl: string;
+  firecrawlVisitedAt: number;
+  firecrawlPageContent: string | null;
+  firecrawlPageSummary: string | null;
+  headerImageUrl: string | null;
+  publishedAt: number | null;
+  discoveredAt: number;
+}) {
+  "use step";
+
+  await convex().mutation(api.importWorkflow.upsertPost, {
+    serviceToken: serviceToken(),
+    feedId: args.feedId,
+    feedImportRunId: args.feedImportRunId,
+    readerId: args.readerId,
+    sourceTitle: args.sourceTitle,
+    sourceSiteUrl: args.sourceSiteUrl,
+    sourceFeedUrl: args.sourceFeedUrl,
+    rssTitle: args.rssTitle,
+    rssDescription: args.rssDescription,
+    rssLinkUrl: args.rssLinkUrl,
+    canonicalUrl: args.canonicalUrl,
+    firecrawlStatus: "succeeded",
+    firecrawlVisitedAt: args.firecrawlVisitedAt,
+    firecrawlPageContent: args.firecrawlPageContent,
+    firecrawlPageSummary: args.firecrawlPageSummary,
+    firecrawlError: null,
+    abstractStatus:
+      args.firecrawlPageSummary !== null ? "succeeded" : "failed",
+    abstractError:
+      args.firecrawlPageSummary !== null
+        ? null
+        : "Existing Post has no Abstract",
+    headerImageUrl: args.headerImageUrl,
+    publishedAt: args.publishedAt,
+    discoveredAt: args.discoveredAt,
+  });
+}
+
 async function processPost(args: WorkflowPostInput) {
   const canonicalUrl = normalizedArticleUrl(args.rssLinkUrl);
   const existing = await getProcessingState(canonicalUrl);
@@ -260,8 +311,7 @@ async function processPost(args: WorkflowPostInput) {
     existing?.firecrawlStatus === "succeeded" &&
     existing.firecrawlVisitedAt !== null
   ) {
-    await convex().mutation(api.importWorkflow.upsertPost, {
-      serviceToken: serviceToken(),
+    await upsertExistingPost({
       feedId: args.feedId,
       feedImportRunId: args.feedImportRunId,
       readerId: args.readerId,
@@ -272,17 +322,9 @@ async function processPost(args: WorkflowPostInput) {
       rssDescription: args.rssDescription,
       rssLinkUrl: args.rssLinkUrl,
       canonicalUrl,
-      firecrawlStatus: "succeeded",
       firecrawlVisitedAt: existing.firecrawlVisitedAt,
       firecrawlPageContent: existing.firecrawlPageContent,
       firecrawlPageSummary: existing.firecrawlPageSummary,
-      firecrawlError: null,
-      abstractStatus:
-        existing.firecrawlPageSummary !== null ? "succeeded" : "failed",
-      abstractError:
-        existing.firecrawlPageSummary !== null
-          ? null
-          : "Existing Post has no Abstract",
       headerImageUrl: args.rssImageUrl ?? existing.headerImageUrl,
       publishedAt: args.publishedAt,
       discoveredAt: args.discoveredAt,
