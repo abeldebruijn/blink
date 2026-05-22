@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { SignInButton, useUser } from "@clerk/nextjs";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { AlertCircle, CheckCircle2, Loader2, Rss } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -33,8 +33,6 @@ function statusClass(status: Status) {
 export default function AddFeedPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const ensureCurrentReader = useMutation(api.readers.ensureCurrent);
-  const startInitialImport = useAction(api.feedImports.startInitialImport);
-  const retryPost = useAction(api.feedImports.retryPost);
   const [submittedFeedUrl, setSubmittedFeedUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -85,7 +83,17 @@ export default function AddFeedPage() {
     setSubmitError(null);
     setIsSubmitting(true);
     try {
-      await startInitialImport({ submittedFeedUrl });
+      const response = await fetch("/api/feeds/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submittedFeedUrl }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(payload?.error ?? "Initial Import failed");
+      }
       setSubmittedFeedUrl("");
     } catch (error) {
       setSubmitError(
@@ -100,7 +108,17 @@ export default function AddFeedPage() {
     setRetryingPostId(postId);
     setSubmitError(null);
     try {
-      await retryPost({ postId });
+      const response = await fetch("/api/posts/retry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(payload?.error ?? "Could not retry Post");
+      }
     } catch (error) {
       setSubmitError(
         error instanceof Error ? error.message : "Could not retry Post",

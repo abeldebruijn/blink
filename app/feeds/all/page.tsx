@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { SignInButton, useUser } from "@clerk/nextjs";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import {
   AlertCircle,
   Check,
@@ -71,10 +71,6 @@ export default function AllFeedsPage() {
   );
   const unsubscribeFromFeed = useMutation(
     api.feedSubscriptions.unsubscribeFromFeed,
-  );
-  const manualRefreshFeed = useAction(api.feedSubscriptions.manualRefreshFeed);
-  const replaceFeedSubscriptionUrl = useAction(
-    api.feedSubscriptions.replaceFeedSubscriptionUrl,
   );
   const [ensuredUserId, setEnsuredUserId] = useState<string | null>(null);
   const [readerErrorUserId, setReaderErrorUserId] = useState<string | null>(
@@ -187,10 +183,22 @@ export default function AllFeedsPage() {
     setBusyId(editing.id);
     setError(null);
     try {
-      await replaceFeedSubscriptionUrl({
-        feedSubscriptionId: editing.id,
-        submittedFeedUrl: editing.value,
+      const response = await fetch("/api/feeds/replace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          feedSubscriptionId: editing.id,
+          submittedFeedUrl: editing.value,
+        }),
       });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(
+          payload?.error ?? "Could not replace Feed Subscription URL",
+        );
+      }
       setEditing(null);
     } catch (replaceError) {
       setError(
@@ -207,7 +215,17 @@ export default function AllFeedsPage() {
     setBusyId(feedSubscriptionId);
     setError(null);
     try {
-      await manualRefreshFeed({ feedSubscriptionId });
+      const response = await fetch("/api/feeds/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedSubscriptionId }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(payload?.error ?? "Could not refresh Feed");
+      }
     } catch (refreshError) {
       setError(
         refreshError instanceof Error

@@ -1,15 +1,21 @@
 import { XMLParser } from "fast-xml-parser";
-import { ConvexError, v } from "convex/values";
-import { query, type MutationCtx, type QueryCtx } from "./_generated/server";
 
-const initialImportLimit = 20;
+export const initialImportLimit = 20;
+export const manualRefreshLimit = 20;
 
-type FeedEntry = {
+export type FeedEntry = {
   title: string;
   linkUrl: string;
   description: string | null;
   imageUrl: string | null;
   publishedAt: number | null;
+};
+
+export type ParsedFeed = {
+  title: string;
+  siteUrl: string | null;
+  description: string | null;
+  entries: FeedEntry[];
 };
 
 export function normalizeUrl(value: string) {
@@ -21,7 +27,7 @@ export function normalizeUrl(value: string) {
     url.hash = "";
     return url.toString();
   } catch {
-    throw new ConvexError("Submitted Feed URL must be a valid HTTP URL");
+    throw new Error("Submitted Feed URL must be a valid HTTP URL");
   }
 }
 
@@ -57,7 +63,7 @@ function attrValue(value: unknown, attrName: string) {
   return record === null ? null : textValue(record[`@_${attrName}`]);
 }
 
-function validImageUrl(value: string | null, baseUrl: string) {
+export function validImageUrl(value: string | null, baseUrl: string) {
   if (value === null) {
     return null;
   }
@@ -166,7 +172,7 @@ function timestamp(value: string | null) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function parseFeed(xml: string, canonicalFeedUrl: string) {
+export function parseFeed(xml: string, canonicalFeedUrl: string): ParsedFeed {
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
@@ -253,86 +259,12 @@ export function parseFeed(xml: string, canonicalFeedUrl: string) {
     };
   }
 
-  throw new ConvexError(
-    "Submitted Feed URL must point directly to RSS or Atom",
-  );
+  throw new Error("Submitted Feed URL must point directly to RSS or Atom");
 }
 
-async function requireCurrentReader(ctx: QueryCtx | MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (identity === null) {
-    throw new ConvexError("Authentication required");
-  }
-
-  const reader = await ctx.db
-    .query("readers")
-    .withIndex("by_tokenIdentifier", (q) =>
-      q.eq("tokenIdentifier", identity.tokenIdentifier),
-    )
-    .unique();
-
-  if (reader === null) {
-    throw new ConvexError("Reader not found");
-  }
-
-  return reader;
+export function newestEntries(entries: FeedEntry[], limit: number) {
+  return entries
+    .slice()
+    .sort((a, b) => (b.publishedAt ?? 0) - (a.publishedAt ?? 0))
+    .slice(0, limit);
 }
-
-export const latestForCurrentReader = query({
-  args: {},
-  handler: async (ctx) => {
-    const reader = await requireCurrentReader(ctx);
-    const run = await ctx.db
-      .query("feedImportRuns")
-      .withIndex("by_readerId_and_createdAt", (q) =>
-        q.eq("readerId", reader._id),
-      )
-      .order("desc")
-      .first();
-
-    if (run === null) {
-      return null;
-    }
-
-    const feed = await ctx.db.get(run.feedId);
-    return {
-      ...run,
-      feedTitle: feed?.title ?? "Feed",
-      feedSiteUrl: feed?.siteUrl ?? null,
-    };
-  },
-});
-
-export const listRunPosts = query({
-  args: {
-    feedImportRunId: v.id("feedImportRuns"),
-    limit: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const reader = await requireCurrentReader(ctx);
-    const run = await ctx.db.get(args.feedImportRunId);
-    if (run === null || run.readerId !== reader._id) {
-      throw new ConvexError("Initial Import not found");
-    }
-
-    const posts = await ctx.db
-      .query("posts")
-      .withIndex("by_feedImportRunId", (q) =>
-        q.eq("feedImportRunId", args.feedImportRunId),
-      )
-      .order("desc")
-      .take(Math.max(1, Math.min(args.limit, initialImportLimit)));
-
-    return posts.map((post) => ({
-      _id: post._id,
-      title: post.rssTitle,
-      canonicalUrl: post.canonicalUrl,
-      publishedAt: post.publishedAt,
-      firecrawlStatus: post.firecrawlStatus ?? null,
-      abstractStatus: post.abstractStatus ?? null,
-      abstract: post.abstract,
-      firecrawlError: post.firecrawlError ?? null,
-      abstractError: post.abstractError ?? null,
-    }));
-  },
-});
