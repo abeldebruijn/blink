@@ -9,7 +9,7 @@ const navItems = [
   { href: "/", label: "Home", icon: HomeIcon },
   { href: "/feeds/new", label: "Add feed", icon: PlusCircle },
   { href: "/search", label: "Search", icon: Search },
-  { href: "/read-later", label: "Saved", icon: Bookmark },
+  { href: "/read-later", label: "Read Later", icon: Bookmark },
 ];
 
 type BottomNavProps = {
