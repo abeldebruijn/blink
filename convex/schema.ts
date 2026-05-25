@@ -110,6 +110,7 @@ export default defineSchema({
     .index("by_discoveredAt", ["discoveredAt"]),
   homeFeedItems: defineTable({
     readerId: v.id("readers"),
+    feedId: v.id("feeds"),
     postId: v.id("posts"),
     sortTime: v.number(),
     publishedAt: v.union(v.number(), v.null()),
@@ -121,7 +122,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_readerId_and_sortTime", ["readerId", "sortTime"])
-    .index("by_readerId_and_postId", ["readerId", "postId"]),
+    .index("by_readerId_and_postId", ["readerId", "postId"])
+    .index("by_readerId_and_feedId", ["readerId", "feedId"]),
   tags: defineTable({
     readerId: v.id("readers"),
     name: v.string(),

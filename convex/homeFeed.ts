@@ -272,10 +272,14 @@ async function materializeHomeFeedItem(
   if (post === null) {
     throw new ConvexError("Post not found");
   }
+  if (post.feedId === undefined || post.feedId === null) {
+    throw new ConvexError("Post feed not found");
+  }
 
   const now = Date.now();
   const fields = {
     readerId,
+    feedId: post.feedId,
     postId,
     sortTime: sortTimeForPost(post),
     publishedAt: post.publishedAt,
