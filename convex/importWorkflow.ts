@@ -1,7 +1,16 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import {
+  action,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
+
+const autoTagMaxTags = 7;
+const autoTagVectorCandidateLimit = 32;
 
 function requireServiceToken(serviceToken: string) {
   const expected = process.env.WORKFLOW_CONVEX_SERVICE_TOKEN;
@@ -11,6 +20,14 @@ function requireServiceToken(serviceToken: string) {
   if (serviceToken !== expected) {
     throw new ConvexError("Invalid workflow service token");
   }
+}
+
+function normalizeTagName(name: string) {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function displayTagName(name: string) {
+  return name.trim().replace(/\s+/g, " ");
 }
 
 async function upsertFeed(
@@ -111,6 +128,43 @@ const workflowPostArgs = {
   discoveredAt: v.number(),
 };
 
+const autoTagEmbeddingValidator = v.array(v.float64());
+
+const generatedAutoTagValidator = v.object({
+  name: v.string(),
+  description: v.string(),
+  embedding: autoTagEmbeddingValidator,
+  embeddingModel: v.string(),
+});
+
+async function attachTagToHomeFeedItem(
+  ctx: MutationCtx,
+  args: {
+    readerId: Id<"readers">;
+    homeFeedItemId: Id<"homeFeedItems">;
+    tagId: Id<"tags">;
+    now: number;
+  },
+) {
+  const existingJoin = await ctx.db
+    .query("homeFeedItemTags")
+    .withIndex("by_homeFeedItemId_and_tagId", (q) =>
+      q.eq("homeFeedItemId", args.homeFeedItemId).eq("tagId", args.tagId),
+    )
+    .unique();
+  if (existingJoin !== null) {
+    return false;
+  }
+
+  await ctx.db.insert("homeFeedItemTags", {
+    readerId: args.readerId,
+    homeFeedItemId: args.homeFeedItemId,
+    tagId: args.tagId,
+    createdAt: args.now,
+  });
+  return true;
+}
+
 export const getRefreshTarget = query({
   args: {
     serviceToken: v.string(),
@@ -170,8 +224,226 @@ export const getProcessingState = query({
       firecrawlVisitedAt: post.firecrawlVisitedAt,
       firecrawlPageContent: post.firecrawlPageContent,
       firecrawlPageSummary: post.firecrawlPageSummary,
+      firecrawlError: post.firecrawlError ?? null,
+      abstractStatus: post.abstractStatus ?? null,
+      abstractError: post.abstractError ?? null,
       headerImageUrl: post.headerImageUrl,
     };
+  },
+});
+
+export const getAutoTagContext = query({
+  args: {
+    serviceToken: v.string(),
+    readerId: v.id("readers"),
+    homeFeedItemId: v.id("homeFeedItems"),
+  },
+  handler: async (ctx, args) => {
+    requireServiceToken(args.serviceToken);
+    const item = await ctx.db.get(args.homeFeedItemId);
+    if (item === null || item.readerId !== args.readerId) {
+      throw new ConvexError("Home Feed Item not found");
+    }
+
+    const existingJoins = await ctx.db
+      .query("homeFeedItemTags")
+      .withIndex("by_readerId_and_homeFeedItemId", (q) =>
+        q.eq("readerId", args.readerId).eq("homeFeedItemId", item._id),
+      )
+      .take(1);
+    if (existingJoins.length > 0) {
+      return { shouldTag: false as const, tags: [] };
+    }
+
+    const tags = [];
+    for await (const tag of ctx.db
+      .query("tags")
+      .withIndex("by_readerId_and_updatedAt", (q) =>
+        q.eq("readerId", args.readerId),
+      )
+      .order("desc")) {
+      tags.push(tag);
+    }
+
+    return {
+      shouldTag: true as const,
+      tags: tags.map((tag) => ({
+        _id: tag._id,
+        name: tag.name,
+        description: tag.description ?? null,
+        hasEmbedding:
+          tag.embedding !== undefined &&
+          tag.embedding !== null &&
+          tag.embedding.length === 1536,
+      })),
+    };
+  },
+});
+
+export const updateAutoTagEmbeddings = mutation({
+  args: {
+    serviceToken: v.string(),
+    readerId: v.id("readers"),
+    tags: v.array(
+      v.object({
+        tagId: v.id("tags"),
+        description: v.string(),
+        embedding: autoTagEmbeddingValidator,
+        embeddingModel: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    requireServiceToken(args.serviceToken);
+    const now = Date.now();
+    let updated = 0;
+
+    for (const tagUpdate of args.tags) {
+      const tag = await ctx.db.get(tagUpdate.tagId);
+      if (tag === null || tag.readerId !== args.readerId) {
+        continue;
+      }
+      await ctx.db.patch(tag._id, {
+        description: tagUpdate.description,
+        embedding: tagUpdate.embedding,
+        embeddingModel: tagUpdate.embeddingModel,
+        embeddingUpdatedAt: now,
+        updatedAt: now,
+      });
+      updated += 1;
+    }
+
+    return { updated };
+  },
+});
+
+export const searchAutoTagCandidates = action({
+  args: {
+    serviceToken: v.string(),
+    readerId: v.id("readers"),
+    embedding: autoTagEmbeddingValidator,
+  },
+  handler: async (ctx, args) => {
+    requireServiceToken(args.serviceToken);
+    return await ctx.vectorSearch("tags", "by_embedding", {
+      vector: args.embedding,
+      limit: autoTagVectorCandidateLimit,
+      filter: (q) => q.eq("readerId", args.readerId),
+    });
+  },
+});
+
+export const applyAutoTags = mutation({
+  args: {
+    serviceToken: v.string(),
+    readerId: v.id("readers"),
+    homeFeedItemId: v.id("homeFeedItems"),
+    existingTagIds: v.array(v.id("tags")),
+    newTags: v.array(generatedAutoTagValidator),
+  },
+  handler: async (ctx, args) => {
+    requireServiceToken(args.serviceToken);
+    const item = await ctx.db.get(args.homeFeedItemId);
+    if (item === null || item.readerId !== args.readerId) {
+      throw new ConvexError("Home Feed Item not found");
+    }
+
+    const existingJoins = await ctx.db
+      .query("homeFeedItemTags")
+      .withIndex("by_readerId_and_homeFeedItemId", (q) =>
+        q.eq("readerId", args.readerId).eq("homeFeedItemId", item._id),
+      )
+      .take(1);
+    if (existingJoins.length > 0) {
+      return { applied: 0, created: 0, skipped: true };
+    }
+
+    const now = Date.now();
+    const selectedTagIds: Id<"tags">[] = [];
+    const seenTagIds = new Set<string>();
+    for (const tagId of args.existingTagIds) {
+      if (selectedTagIds.length >= autoTagMaxTags || seenTagIds.has(tagId)) {
+        continue;
+      }
+      const tag = await ctx.db.get(tagId);
+      if (tag === null || tag.readerId !== args.readerId) {
+        continue;
+      }
+      seenTagIds.add(tagId);
+      selectedTagIds.push(tagId);
+    }
+
+    let created = 0;
+    const seenNames = new Set<string>();
+    for (const generatedTag of args.newTags) {
+      if (selectedTagIds.length >= autoTagMaxTags || created >= 3) {
+        break;
+      }
+
+      const name = displayTagName(generatedTag.name);
+      const normalizedName = normalizeTagName(name);
+      if (normalizedName === "" || seenNames.has(normalizedName)) {
+        continue;
+      }
+      seenNames.add(normalizedName);
+
+      const existingTag = await ctx.db
+        .query("tags")
+        .withIndex("by_readerId_and_normalizedName", (q) =>
+          q.eq("readerId", args.readerId).eq("normalizedName", normalizedName),
+        )
+        .unique();
+
+      const tagId =
+        existingTag?._id ??
+        (await ctx.db.insert("tags", {
+          readerId: args.readerId,
+          name,
+          normalizedName,
+          description: generatedTag.description,
+          embedding: generatedTag.embedding,
+          embeddingModel: generatedTag.embeddingModel,
+          embeddingUpdatedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        }));
+
+      if (existingTag !== null) {
+        await ctx.db.patch(existingTag._id, {
+          description: generatedTag.description,
+          embedding: generatedTag.embedding,
+          embeddingModel: generatedTag.embeddingModel,
+          embeddingUpdatedAt: now,
+          updatedAt: now,
+        });
+      } else {
+        created += 1;
+      }
+
+      if (!seenTagIds.has(tagId)) {
+        seenTagIds.add(tagId);
+        selectedTagIds.push(tagId);
+      }
+    }
+
+    let applied = 0;
+    for (const tagId of selectedTagIds) {
+      const didAttach = await attachTagToHomeFeedItem(ctx, {
+        readerId: args.readerId,
+        homeFeedItemId: args.homeFeedItemId,
+        tagId,
+        now,
+      });
+      if (didAttach) {
+        applied += 1;
+      }
+    }
+
+    if (applied > 0) {
+      await ctx.db.patch(args.homeFeedItemId, { updatedAt: now });
+    }
+
+    return { applied, created, skipped: false };
   },
 });
 
