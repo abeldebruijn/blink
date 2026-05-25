@@ -6,6 +6,7 @@
     "dev": "convex dev --start 'next dev'",
     "build": "next build",
     "start": "next start",
+    "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "sandcastle": "npx tsx .sandcastle/main.mts"
@@ -42,7 +43,8 @@
     "eslint-config-next": "^16.2.4",
     "prettier": "^3.8.3",
     "tailwindcss": "^4.2.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
