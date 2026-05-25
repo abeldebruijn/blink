@@ -5,11 +5,11 @@ import {
   initialImportLimit,
   manualRefreshLimit,
   newestEntries,
-  normalizeUrl,
   parseFeed,
   type FeedEntry,
 } from "@/lib/feed-imports";
 import { generateAbstract, scrapeWithFirecrawl } from "@/lib/post-processing";
+import { normalizeUrl } from "@/lib/url-normalization";
 
 const postBatchSize = 4;
 
@@ -48,16 +48,6 @@ function serviceToken() {
     throw new Error("WORKFLOW_CONVEX_SERVICE_TOKEN is not configured");
   }
   return token;
-}
-
-function normalizedArticleUrl(url: string) {
-  try {
-    const parsed = new URL(url);
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    throw new Error("RSS entry link is not a valid URL");
-  }
 }
 
 async function fetchFeed(canonicalFeedUrl: string) {
@@ -305,7 +295,9 @@ async function upsertExistingPost(args: {
 }
 
 async function processPost(args: WorkflowPostInput) {
-  const canonicalUrl = normalizedArticleUrl(args.rssLinkUrl);
+  const canonicalUrl = normalizeUrl(args.rssLinkUrl, {
+    errorMessage: "RSS entry link is not a valid URL",
+  });
   const existing = await getProcessingState(canonicalUrl);
   if (
     existing?.firecrawlStatus === "succeeded" &&

@@ -1,4 +1,5 @@
-import { normalizeUrl, parseFeed } from "@/lib/feed-imports";
+import { parseFeed } from "@/lib/feed-imports";
+import { normalizeUrl } from "@/lib/url-normalization";
 
 export async function preflightFeedUrl(submittedFeedUrlInput: string) {
   const submittedFeedUrl = normalizeUrl(submittedFeedUrlInput);
