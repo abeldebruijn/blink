@@ -6,6 +6,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
+import { deleteHomeFeedItem } from "./homeFeed";
 
 async function requireCurrentReader(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -160,7 +161,7 @@ export const unsubscribeFromFeed = mutation({
       .withIndex("by_readerId_and_feedId", (q) =>
         q.eq("readerId", reader._id).eq("feedId", subscription.feedId),
       )) {
-      await ctx.db.delete(item._id);
+      await deleteHomeFeedItem(ctx, item);
     }
 
     await ctx.db.delete(args.feedSubscriptionId);
