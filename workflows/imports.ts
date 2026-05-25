@@ -339,6 +339,18 @@ async function generatePostAbstract(content: string, title: string) {
   return await generateAbstract(content, title);
 }
 
+function wasManuallyFailed(
+  state: Awaited<ReturnType<typeof getProcessingState>>,
+) {
+  return (
+    state !== null &&
+    (state.firecrawlError === "Post import skipped manually" ||
+      state.firecrawlError === "Post import timed out after 2 minutes" ||
+      state.abstractError === "Post import skipped manually" ||
+      state.abstractError === "Post import timed out after 2 minutes")
+  );
+}
+
 async function prepareMissingTagEmbeddings(tags: ExistingAutoTag[]) {
   "use step";
 
@@ -564,6 +576,10 @@ async function processPost(args: WorkflowPostInput) {
           }),
         )
       : { ok: false as const, error: scraped.error };
+
+  if (wasManuallyFailed(await getProcessingState(canonicalUrl))) {
+    return;
+  }
 
   const upserted = await upsertProcessedPost({
     ...args,

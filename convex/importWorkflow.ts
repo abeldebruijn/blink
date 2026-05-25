@@ -224,6 +224,9 @@ export const getProcessingState = query({
       firecrawlVisitedAt: post.firecrawlVisitedAt,
       firecrawlPageContent: post.firecrawlPageContent,
       firecrawlPageSummary: post.firecrawlPageSummary,
+      firecrawlError: post.firecrawlError ?? null,
+      abstractStatus: post.abstractStatus ?? null,
+      abstractError: post.abstractError ?? null,
       headerImageUrl: post.headerImageUrl,
     };
   },

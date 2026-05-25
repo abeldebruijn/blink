@@ -94,7 +94,10 @@ function bucketEntries(item: Doc<"homeFeedItems">) {
   return entries;
 }
 
-async function insertBucketEntries(ctx: MutationCtx, item: Doc<"homeFeedItems">) {
+async function insertBucketEntries(
+  ctx: MutationCtx,
+  item: Doc<"homeFeedItems">,
+) {
   for (const entry of bucketEntries(item)) {
     await homeFeedBuckets.insertIfDoesNotExist(ctx, {
       key: entry.key,
@@ -430,8 +433,7 @@ export const getReadingView = query({
       readAt: item.readAt,
       isRead: item.readAt !== null,
       readLaterAt: item.readLaterAt ?? null,
-      isReadLater:
-        item.readLaterAt !== undefined && item.readLaterAt !== null,
+      isReadLater: item.readLaterAt !== undefined && item.readLaterAt !== null,
       likedAt: item.likedAt ?? null,
       isLiked: item.likedAt !== undefined && item.likedAt !== null,
     };
@@ -811,6 +813,9 @@ export const getProcessingState = internalQuery({
       firecrawlVisitedAt: post.firecrawlVisitedAt,
       firecrawlPageContent: post.firecrawlPageContent,
       firecrawlPageSummary: post.firecrawlPageSummary,
+      firecrawlError: post.firecrawlError ?? null,
+      abstractStatus: post.abstractStatus ?? null,
+      abstractError: post.abstractError ?? null,
       headerImageUrl: post.headerImageUrl,
     };
   },
