@@ -157,13 +157,10 @@ export const unsubscribeFromFeed = mutation({
 
     for await (const item of ctx.db
       .query("homeFeedItems")
-      .withIndex("by_readerId_and_sortTime", (q) =>
-        q.eq("readerId", reader._id),
+      .withIndex("by_readerId_and_feedId", (q) =>
+        q.eq("readerId", reader._id).eq("feedId", subscription.feedId),
       )) {
-      const post = await ctx.db.get(item.postId);
-      if (post?.feedId === subscription.feedId) {
-        await ctx.db.delete(item._id);
-      }
+      await ctx.db.delete(item._id);
     }
 
     await ctx.db.delete(args.feedSubscriptionId);

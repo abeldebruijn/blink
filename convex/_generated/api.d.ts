@@ -12,6 +12,7 @@ import type * as feedImports from "../feedImports.js";
 import type * as feedSubscriptions from "../feedSubscriptions.js";
 import type * as homeFeed from "../homeFeed.js";
 import type * as importWorkflow from "../importWorkflow.js";
+import type * as migrations from "../migrations.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as readers from "../readers.js";
 
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   feedSubscriptions: typeof feedSubscriptions;
   homeFeed: typeof homeFeed;
   importWorkflow: typeof importWorkflow;
+  migrations: typeof migrations;
   myFunctions: typeof myFunctions;
   readers: typeof readers;
 }>;

@@ -72,11 +72,10 @@ async function deleteReaderHomeFeedItemsForFeed(
 ) {
   for await (const item of ctx.db
     .query("homeFeedItems")
-    .withIndex("by_readerId_and_sortTime", (q) => q.eq("readerId", readerId))) {
-    const post = await ctx.db.get(item.postId);
-    if (post?.feedId === feedId) {
-      await ctx.db.delete(item._id);
-    }
+    .withIndex("by_readerId_and_feedId", (q) =>
+      q.eq("readerId", readerId).eq("feedId", feedId),
+    )) {
+    await ctx.db.delete(item._id);
   }
 }
 
