@@ -65,6 +65,13 @@ async function upsertFeed(
   return feedId;
 }
 
+/**
+ * Deletes all homeFeedItems entries for the given reader and feed.
+ *
+ * @param ctx - Mutation context providing database access
+ * @param readerId - The reader's Id whose home feed items should be deleted
+ * @param feedId - The feed's Id whose home feed items should be deleted
+ */
 async function deleteReaderHomeFeedItemsForFeed(
   ctx: MutationCtx,
   readerId: Id<"readers">,

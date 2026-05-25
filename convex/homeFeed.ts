@@ -263,6 +263,15 @@ function postAbstractFields(
   };
 }
 
+/**
+ * Ensures a home feed item exists for the given reader and post and updates its stored metadata.
+ *
+ * If a corresponding homeFeedItems row does not exist, inserts one with initial read state and bucket entries.
+ * If one exists, patches its metadata and updates bucket aggregates to reflect any changes.
+ *
+ * @returns The id of the created or existing homeFeedItems row.
+ * @throws ConvexError When the referenced post does not exist or when the post has no associated feed (`"Post not found"` or `"Post feed not found"`).
+ */
 async function materializeHomeFeedItem(
   ctx: MutationCtx,
   readerId: Id<"readers">,
