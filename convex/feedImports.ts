@@ -1,6 +1,11 @@
 import { XMLParser } from "fast-xml-parser";
 import { ConvexError, v } from "convex/values";
-import { query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import {
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 
 const initialImportLimit = 20;
 
@@ -333,6 +338,68 @@ export const listRunPosts = query({
       abstract: post.abstract,
       firecrawlError: post.firecrawlError ?? null,
       abstractError: post.abstractError ?? null,
+      updatedAt: post.updatedAt,
     }));
+  },
+});
+
+export const markRunPostFailed = mutation({
+  args: {
+    postId: v.id("posts"),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const reader = await requireCurrentReader(ctx);
+    const post = await ctx.db.get(args.postId);
+    if (post === null) {
+      throw new ConvexError("Post not found");
+    }
+    if (post.feedImportRunId === null || post.feedImportRunId === undefined) {
+      throw new ConvexError("Post is not part of an Initial Import");
+    }
+
+    const run = await ctx.db.get(post.feedImportRunId);
+    if (run === null || run.readerId !== reader._id) {
+      throw new ConvexError("Initial Import not found");
+    }
+
+    if (
+      post.firecrawlStatus === "succeeded" &&
+      post.abstractStatus === "succeeded"
+    ) {
+      return { markedFailed: false };
+    }
+
+    const wasFailed =
+      post.firecrawlStatus === "failed" || post.abstractStatus === "failed";
+    const now = Date.now();
+    const reason = args.reason.trim() || "Post import failed";
+    await ctx.db.patch(post._id, {
+      firecrawlStatus:
+        post.firecrawlStatus === "succeeded" ? post.firecrawlStatus : "failed",
+      firecrawlError:
+        post.firecrawlStatus === "succeeded"
+          ? (post.firecrawlError ?? null)
+          : reason,
+      abstractStatus:
+        post.abstractStatus === "succeeded" ? post.abstractStatus : "failed",
+      abstractError:
+        post.abstractStatus === "succeeded"
+          ? (post.abstractError ?? null)
+          : reason,
+      updatedAt: now,
+    });
+
+    if (!wasFailed) {
+      const failedCount = run.failedCount + 1;
+      const finishedCount = run.completedCount + failedCount;
+      await ctx.db.patch(run._id, {
+        failedCount,
+        status: finishedCount >= run.importCount ? "completed" : run.status,
+        updatedAt: now,
+      });
+    }
+
+    return { markedFailed: true };
   },
 });

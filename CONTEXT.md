@@ -64,6 +64,14 @@ _Avoid_: Progress, reading history
 A Reader's private saved-for-later state for a Post.
 _Avoid_: Bookmark, saved post, favorite
 
+**Tag**:
+A Reader-owned label used to organize Home Feed Items.
+_Avoid_: Topic, shared topic, category
+
+**Tag Description**:
+Internal text describing what a Tag means for future automatic tagging.
+_Avoid_: Public tag description, tag copy
+
 **Home Feed**:
 The Reader's primary list of Posts from their Feed Subscriptions.
 _Avoid_: Global feed, discovery feed
@@ -130,6 +138,9 @@ _Avoid_: Resync, reprocess, backfill
 - An **Author Hide** belongs to exactly one **Reader**
 - **Read Later** belongs to exactly one **Reader** and one **Post**
 - **Read State** belongs to exactly one **Reader** and one **Post**
+- A **Reader** can have many **Tags**
+- A **Tag** belongs to exactly one **Reader**
+- A **Home Feed Item** can have many **Tags**
 - A **Home Feed** shows **Posts** from a **Reader's** own **Feed Subscriptions**
 - A **Home Feed Item** belongs to exactly one **Reader** and one **Post**
 - A **Reading View** shows one **Post's Extracted Content**

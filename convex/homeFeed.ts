@@ -94,7 +94,10 @@ function bucketEntries(item: Doc<"homeFeedItems">) {
   return entries;
 }
 
-async function insertBucketEntries(ctx: MutationCtx, item: Doc<"homeFeedItems">) {
+async function insertBucketEntries(
+  ctx: MutationCtx,
+  item: Doc<"homeFeedItems">,
+) {
   for (const entry of bucketEntries(item)) {
     await homeFeedBuckets.insertIfDoesNotExist(ctx, {
       key: entry.key,
@@ -156,6 +159,40 @@ function countBounds(readerId: Id<"readers">, bucket: HomeFeedBucket) {
   };
 }
 
+function normalizeTagName(name: string) {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function displayTagName(name: string) {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+async function tagsForHomeFeedItem(
+  ctx: QueryCtx,
+  readerId: Id<"readers">,
+  homeFeedItemId: Id<"homeFeedItems">,
+) {
+  const joins = await ctx.db
+    .query("homeFeedItemTags")
+    .withIndex("by_readerId_and_homeFeedItemId", (q) =>
+      q.eq("readerId", readerId).eq("homeFeedItemId", homeFeedItemId),
+    )
+    .collect();
+
+  const tags = [];
+  for (const join of joins) {
+    const tag = await ctx.db.get(join.tagId);
+    if (tag !== null && tag.readerId === readerId) {
+      tags.push({
+        _id: tag._id,
+        name: tag.name,
+      });
+    }
+  }
+
+  return tags.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 async function homeFeedItemView(
   ctx: QueryCtx,
   readerId: Id<"readers">,
@@ -193,6 +230,7 @@ async function homeFeedItemView(
     isReadLater: item.readLaterAt !== undefined && item.readLaterAt !== null,
     likedAt: item.likedAt ?? null,
     isLiked: item.likedAt !== undefined && item.likedAt !== null,
+    tags: await tagsForHomeFeedItem(ctx, readerId, item._id),
   };
 }
 
@@ -298,32 +336,53 @@ export const listPage = query({
   },
   handler: async (ctx, args) => {
     const reader = await requireCurrentReader(ctx);
-    const page = await homeFeedBuckets.paginate(ctx, {
-      ...countBounds(reader._id, args.feed),
-      cursor: args.paginationOpts.cursor ?? undefined,
-      order: "desc",
-      pageSize: boundedLimit(args.paginationOpts.numItems),
-    });
-
+    const pageSize = boundedLimit(args.paginationOpts.numItems);
+    let cursor = args.paginationOpts.cursor ?? "";
+    let isDone = false;
     const results = [];
-    for (const aggregateItem of page.page) {
-      const itemId = ctx.db.normalizeId(
-        "homeFeedItems",
-        itemIdFromAggregateId(aggregateItem.id),
-      );
-      if (itemId === null) {
-        continue;
+
+    while (results.length < pageSize && !isDone) {
+      const previousCursor = cursor;
+      const page = await homeFeedBuckets.paginate(ctx, {
+        ...countBounds(reader._id, args.feed),
+        cursor: cursor === "" ? undefined : cursor,
+        order: "desc",
+        pageSize,
+      });
+      cursor = page.cursor;
+      isDone = page.isDone;
+      // Aggregate pagination should always advance or finish. If that contract
+      // breaks, stop here instead of spinning forever on the same stale page.
+      if (cursor === previousCursor) {
+        break;
       }
-      const view = await homeFeedItemView(ctx, reader._id, itemId);
-      if (view !== null) {
-        results.push(view);
+
+      for (const aggregateItem of page.page) {
+        const itemId = ctx.db.normalizeId(
+          "homeFeedItems",
+          itemIdFromAggregateId(aggregateItem.id),
+        );
+        if (itemId === null) {
+          continue;
+        }
+        const view = await homeFeedItemView(ctx, reader._id, itemId);
+        if (view !== null) {
+          results.push(view);
+          if (results.length >= pageSize) {
+            break;
+          }
+        }
+      }
+
+      if (page.page.length === 0) {
+        break;
       }
     }
 
     return {
       page: results,
-      isDone: page.isDone,
-      continueCursor: page.cursor,
+      isDone,
+      continueCursor: cursor,
     };
   },
 });
@@ -374,11 +433,112 @@ export const getReadingView = query({
       readAt: item.readAt,
       isRead: item.readAt !== null,
       readLaterAt: item.readLaterAt ?? null,
-      isReadLater:
-        item.readLaterAt !== undefined && item.readLaterAt !== null,
+      isReadLater: item.readLaterAt !== undefined && item.readLaterAt !== null,
       likedAt: item.likedAt ?? null,
       isLiked: item.likedAt !== undefined && item.likedAt !== null,
     };
+  },
+});
+
+export const listTags = query({
+  args: {},
+  handler: async (ctx) => {
+    const reader = await requireCurrentReader(ctx);
+    const tags = await ctx.db
+      .query("tags")
+      .withIndex("by_readerId_and_updatedAt", (q) =>
+        q.eq("readerId", reader._id),
+      )
+      .order("desc")
+      .collect();
+
+    return tags.map((tag) => ({
+      _id: tag._id,
+      name: tag.name,
+    }));
+  },
+});
+
+export const addTagToHomeFeedItem = mutation({
+  args: {
+    homeFeedItemId: v.id("homeFeedItems"),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const reader = await requireCurrentReader(ctx);
+    const item = await ctx.db.get(args.homeFeedItemId);
+    if (item === null || item.readerId !== reader._id) {
+      throw new ConvexError("Home feed item not found");
+    }
+
+    const name = displayTagName(args.name);
+    const normalizedName = normalizeTagName(name);
+    if (normalizedName === "") {
+      throw new ConvexError("Tag name is required");
+    }
+
+    const now = Date.now();
+    const existingTag = await ctx.db
+      .query("tags")
+      .withIndex("by_readerId_and_normalizedName", (q) =>
+        q.eq("readerId", reader._id).eq("normalizedName", normalizedName),
+      )
+      .unique();
+    const tagId =
+      existingTag?._id ??
+      (await ctx.db.insert("tags", {
+        readerId: reader._id,
+        name,
+        normalizedName,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+    if (existingTag !== null) {
+      await ctx.db.patch(existingTag._id, { updatedAt: now });
+    }
+
+    const existingJoin = await ctx.db
+      .query("homeFeedItemTags")
+      .withIndex("by_homeFeedItemId_and_tagId", (q) =>
+        q.eq("homeFeedItemId", args.homeFeedItemId).eq("tagId", tagId),
+      )
+      .unique();
+    if (existingJoin === null) {
+      await ctx.db.insert("homeFeedItemTags", {
+        readerId: reader._id,
+        homeFeedItemId: args.homeFeedItemId,
+        tagId,
+        createdAt: now,
+      });
+    }
+
+    await ctx.db.patch(args.homeFeedItemId, { updatedAt: now });
+  },
+});
+
+export const removeTagFromHomeFeedItem = mutation({
+  args: {
+    homeFeedItemId: v.id("homeFeedItems"),
+    tagId: v.id("tags"),
+  },
+  handler: async (ctx, args) => {
+    const reader = await requireCurrentReader(ctx);
+    const item = await ctx.db.get(args.homeFeedItemId);
+    if (item === null || item.readerId !== reader._id) {
+      throw new ConvexError("Home feed item not found");
+    }
+
+    const join = await ctx.db
+      .query("homeFeedItemTags")
+      .withIndex("by_homeFeedItemId_and_tagId", (q) =>
+        q.eq("homeFeedItemId", args.homeFeedItemId).eq("tagId", args.tagId),
+      )
+      .unique();
+    if (join !== null && join.readerId === reader._id) {
+      await ctx.db.delete(join._id);
+      await ctx.db.patch(args.homeFeedItemId, { updatedAt: Date.now() });
+    }
   },
 });
 
@@ -653,6 +813,9 @@ export const getProcessingState = internalQuery({
       firecrawlVisitedAt: post.firecrawlVisitedAt,
       firecrawlPageContent: post.firecrawlPageContent,
       firecrawlPageSummary: post.firecrawlPageSummary,
+      firecrawlError: post.firecrawlError ?? null,
+      abstractStatus: post.abstractStatus ?? null,
+      abstractError: post.abstractError ?? null,
       headerImageUrl: post.headerImageUrl,
     };
   },

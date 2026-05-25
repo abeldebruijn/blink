@@ -22,6 +22,7 @@ import type {
   HomeFeedFilter,
   HomeFeedItems,
   HomeFeedPaginationStatus,
+  HomeFeedTags,
 } from "./types";
 
 const lazyLoadPageSize = 20;
@@ -45,6 +46,7 @@ export function HomeFeedStoryDeck({
   const markRead = useMutation(api.homeFeed.markRead);
   const toggleReadLater = useMutation(api.homeFeed.toggleReadLater);
   const toggleLike = useMutation(api.homeFeed.toggleLike);
+  const tags = useQuery(api.homeFeed.listTags, {});
   const feedSubscriptionCount = useQuery(
     api.feedSubscriptions.countForCurrentReader,
     {},
@@ -193,6 +195,7 @@ export function HomeFeedStoryDeck({
           key={item._id}
           item={item}
           index={index}
+          tags={tags ?? ([] satisfies HomeFeedTags)}
           onMarkRead={(homeFeedItemId) =>
             markRead({ homeFeedItemId, read: true })
           }

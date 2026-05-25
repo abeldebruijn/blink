@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { SignInButton, useUser } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
@@ -10,6 +10,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { BottomNav } from "@/app/_components/bottom-nav";
 
 type Status = "pending" | "succeeded" | "failed" | null;
+const skipAvailableAfterMs = 15_000;
+const pendingFailureAfterMs = 120_000;
 
 // Combobox URL autocomplete component
 function FeedCombobox({
@@ -135,6 +137,7 @@ type BatchInfo = {
     abstract: string | null;
     firecrawlError: string | null;
     abstractError: string | null;
+    updatedAt: number;
   }>;
   status: "completed" | "processing" | "queued" | "failed";
   completedCount: number;
@@ -237,6 +240,77 @@ function IngestionHeader({
   );
 }
 
+function isPostPending(post: BatchInfo["posts"][number]) {
+  return (
+    post.firecrawlStatus === "pending" ||
+    post.abstractStatus === "pending" ||
+    (!post.firecrawlStatus && !post.abstractStatus)
+  );
+}
+
+function isPostFailed(post: BatchInfo["posts"][number]) {
+  return post.firecrawlStatus === "failed" || post.abstractStatus === "failed";
+}
+
+function RunPostCard({
+  post,
+  now,
+  retryingPostId,
+  failingPostId,
+  onRetryPost,
+  onSkipPost,
+}: {
+  post: BatchInfo["posts"][number];
+  now: number;
+  retryingPostId: string | null;
+  failingPostId: string | null;
+  onRetryPost: (postId: Id<"posts">) => Promise<void>;
+  onSkipPost: (postId: Id<"posts">) => Promise<void>;
+}) {
+  const pending = isPostPending(post);
+  const failed = isPostFailed(post);
+  const canSkip = pending && now - post.updatedAt >= skipAvailableAfterMs;
+
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-[8px] bg-black/20 p-2.5 border border-white/5">
+      <span
+        className="truncate text-xs font-semibold text-white/80"
+        title={post.title}
+      >
+        {post.title}
+      </span>
+      <div className="flex items-center gap-1.5 shrink-0">
+        {pending ? (
+          <>
+            {canSkip ? (
+              <button
+                type="button"
+                onClick={() => void onSkipPost(post._id)}
+                disabled={failingPostId === post._id}
+                className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] hover:bg-white/20 font-black cursor-pointer text-amber-300 disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                Skip
+              </button>
+            ) : null}
+            <Loader2 className="size-3 animate-spin text-amber-400" />
+          </>
+        ) : failed ? (
+          <button
+            type="button"
+            onClick={() => void onRetryPost(post._id)}
+            disabled={retryingPostId === post._id}
+            className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] hover:bg-white/20 font-black cursor-pointer text-red-400 disabled:cursor-not-allowed disabled:opacity-55"
+          >
+            Retry
+          </button>
+        ) : (
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AddFeedPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const ensureCurrentReader = useMutation(api.readers.ensureCurrent);
@@ -245,6 +319,10 @@ export default function AddFeedPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [ensuredUserId, setEnsuredUserId] = useState<string | null>(null);
   const [retryingPostId, setRetryingPostId] = useState<string | null>(null);
+  const [failingPostId, setFailingPostId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const autoFailingPostIds = useRef(new Set<string>());
+  const markRunPostFailed = useMutation(api.feedImports.markRunPostFailed);
 
   const userId = user?.id;
 
@@ -283,6 +361,14 @@ export default function AddFeedPage() {
       ? { feedImportRunId: latestRun._id, limit: 20 }
       : "skip",
   );
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1_000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   const isComplete = useMemo(() => {
     if (!latestRun) return false;
@@ -359,6 +445,29 @@ export default function AddFeedPage() {
     });
   }, [chronologicalPosts]);
 
+  useEffect(() => {
+    if (!runPosts) {
+      return;
+    }
+
+    for (const post of runPosts) {
+      if (
+        isPostPending(post) &&
+        now - post.updatedAt >= pendingFailureAfterMs &&
+        !autoFailingPostIds.current.has(post._id)
+      ) {
+        autoFailingPostIds.current.add(post._id);
+        void markRunPostFailed({
+          postId: post._id,
+          reason: "Post import timed out after 2 minutes",
+        }).finally(() => {
+          autoFailingPostIds.current.delete(post._id);
+        });
+        break;
+      }
+    }
+  }, [markRunPostFailed, now, runPosts]);
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError(null);
@@ -406,6 +515,23 @@ export default function AddFeedPage() {
       );
     } finally {
       setRetryingPostId(null);
+    }
+  }
+
+  async function onSkipPost(postId: Id<"posts">) {
+    setFailingPostId(postId);
+    setSubmitError(null);
+    try {
+      await markRunPostFailed({
+        postId,
+        reason: "Post import skipped manually",
+      });
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Could not skip Post",
+      );
+    } finally {
+      setFailingPostId(null);
     }
   }
 
@@ -546,35 +672,15 @@ export default function AddFeedPage() {
                         </div>
                         <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {batch.posts.map((post) => (
-                            <div
+                            <RunPostCard
                               key={post._id}
-                              className="flex items-center justify-between gap-2 rounded-[8px] bg-black/20 p-2.5 border border-white/5"
-                            >
-                              <span
-                                className="truncate text-xs font-semibold text-white/80"
-                                title={post.title}
-                              >
-                                {post.title}
-                              </span>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {post.firecrawlStatus === "pending" ||
-                                post.abstractStatus === "pending" ? (
-                                  <Loader2 className="size-3 animate-spin text-amber-400" />
-                                ) : post.firecrawlStatus === "failed" ||
-                                  post.abstractStatus === "failed" ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => void onRetryPost(post._id)}
-                                    disabled={retryingPostId === post._id}
-                                    className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] hover:bg-white/20 font-black cursor-pointer text-red-400"
-                                  >
-                                    Retry
-                                  </button>
-                                ) : (
-                                  <span className="size-1.5 rounded-full bg-emerald-500" />
-                                )}
-                              </div>
-                            </div>
+                              post={post}
+                              now={now}
+                              retryingPostId={retryingPostId}
+                              failingPostId={failingPostId}
+                              onRetryPost={onRetryPost}
+                              onSkipPost={onSkipPost}
+                            />
                           ))}
                         </div>
                       </div>
