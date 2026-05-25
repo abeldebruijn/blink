@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+export { normalizeUrl } from "@/lib/url-normalization";
 
 export const initialImportLimit = 20;
 export const manualRefreshLimit = 20;
@@ -17,19 +18,6 @@ export type ParsedFeed = {
   description: string | null;
   entries: FeedEntry[];
 };
-
-export function normalizeUrl(value: string) {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      throw new Error("Unsupported protocol");
-    }
-    url.hash = "";
-    return url.toString();
-  } catch {
-    throw new Error("Submitted Feed URL must be a valid HTTP URL");
-  }
-}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)

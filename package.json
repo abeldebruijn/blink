@@ -6,6 +6,7 @@
     "dev": "convex dev --start 'next dev'",
     "build": "next build",
     "start": "next start",
+    "test": "node --test lib/url-normalization.test.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "sandcastle": "npx tsx .sandcastle/main.mts"
