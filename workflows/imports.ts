@@ -7,7 +7,7 @@ import {
   newestEntries,
   parseFeed,
   type FeedEntry,
-} from "@/lib/feed-imports";
+} from "@/convex/feedImports";
 import {
   describeTagsForAutoTag,
   embedTaggingText,

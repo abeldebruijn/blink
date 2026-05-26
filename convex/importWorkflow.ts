@@ -8,6 +8,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
+import { deleteHomeFeedItem } from "./homeFeed";
 
 const autoTagMaxTags = 7;
 const autoTagVectorCandidateLimit = 32;
@@ -75,7 +76,7 @@ async function deleteReaderHomeFeedItemsForFeed(
     .withIndex("by_readerId_and_feedId", (q) =>
       q.eq("readerId", readerId).eq("feedId", feedId),
     )) {
-    await ctx.db.delete(item._id);
+    await deleteHomeFeedItem(ctx, item);
   }
 }
 

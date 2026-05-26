@@ -1,4 +1,4 @@
-import { parseFeed } from "@/lib/feed-imports";
+import { parseFeed } from "@/convex/feedImports";
 import { normalizeUrl } from "@/lib/url-normalization";
 
 export async function preflightFeedUrl(submittedFeedUrlInput: string) {

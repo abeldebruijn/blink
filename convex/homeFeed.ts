@@ -11,6 +11,10 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { components } from "./_generated/api";
+import {
+  homeFeedBucketEntries,
+  type HomeFeedBucket,
+} from "../lib/home-feed-aggregate-keys";
 
 const maxHomeFeedItems = 100;
 const homeFeedBucketValidator = v.union(
@@ -19,8 +23,6 @@ const homeFeedBucketValidator = v.union(
   v.literal("readLater"),
   v.literal("liked"),
 );
-
-type HomeFeedBucket = "unread" | "read" | "readLater" | "liked";
 
 const homeFeedBuckets = new DirectAggregate<{
   Key: [Id<"readers">, HomeFeedBucket, number];
@@ -57,48 +59,11 @@ function sortTimeForPost(
   return post.publishedAt ?? post.discoveredAt;
 }
 
-function aggregateId(itemId: Id<"homeFeedItems">, bucket: HomeFeedBucket) {
-  return `${itemId}:${bucket}`;
-}
-
-function bucketEntries(item: Doc<"homeFeedItems">) {
-  const entries: Array<{
-    bucket: HomeFeedBucket;
-    key: [Id<"readers">, HomeFeedBucket, number];
-    id: string;
-  }> = [];
-  const readBucket = item.readAt === null ? "unread" : "read";
-
-  entries.push({
-    bucket: readBucket,
-    key: [item.readerId, readBucket, item.sortTime],
-    id: aggregateId(item._id, readBucket),
-  });
-
-  if (item.readLaterAt !== undefined && item.readLaterAt !== null) {
-    entries.push({
-      bucket: "readLater",
-      key: [item.readerId, "readLater", item.sortTime],
-      id: aggregateId(item._id, "readLater"),
-    });
-  }
-
-  if (item.likedAt !== undefined && item.likedAt !== null) {
-    entries.push({
-      bucket: "liked",
-      key: [item.readerId, "liked", item.sortTime],
-      id: aggregateId(item._id, "liked"),
-    });
-  }
-
-  return entries;
-}
-
 async function insertBucketEntries(
   ctx: MutationCtx,
   item: Doc<"homeFeedItems">,
 ) {
-  for (const entry of bucketEntries(item)) {
+  for (const entry of homeFeedBucketEntries(item)) {
     await homeFeedBuckets.insertIfDoesNotExist(ctx, {
       key: entry.key,
       id: entry.id,
@@ -112,10 +77,10 @@ async function replaceBucketEntries(
   newItem: Doc<"homeFeedItems">,
 ) {
   const oldEntries = new Map(
-    bucketEntries(oldItem).map((entry) => [entry.bucket, entry]),
+    homeFeedBucketEntries(oldItem).map((entry) => [entry.bucket, entry]),
   );
   const newEntries = new Map(
-    bucketEntries(newItem).map((entry) => [entry.bucket, entry]),
+    homeFeedBucketEntries(newItem).map((entry) => [entry.bucket, entry]),
   );
 
   for (const [bucket, oldEntry] of oldEntries) {
@@ -144,6 +109,20 @@ async function replaceBucketEntries(
       id: newEntry.id,
     });
   }
+}
+
+export async function deleteHomeFeedItem(
+  ctx: MutationCtx,
+  item: Doc<"homeFeedItems">,
+) {
+  for (const entry of homeFeedBucketEntries(item)) {
+    await homeFeedBuckets.deleteIfExists(ctx, {
+      key: entry.key,
+      id: entry.id,
+    });
+  }
+
+  await ctx.db.delete(item._id);
 }
 
 function itemIdFromAggregateId(id: string) {
