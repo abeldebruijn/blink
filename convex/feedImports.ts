@@ -7,14 +7,22 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 
-const initialImportLimit = 20;
+export const initialImportLimit = 20;
+export const manualRefreshLimit = 20;
 
-type FeedEntry = {
+export type FeedEntry = {
   title: string;
   linkUrl: string;
   description: string | null;
   imageUrl: string | null;
   publishedAt: number | null;
+};
+
+export type ParsedFeed = {
+  title: string;
+  siteUrl: string | null;
+  description: string | null;
+  entries: FeedEntry[];
 };
 
 export function normalizeUrl(value: string) {
@@ -62,7 +70,7 @@ function attrValue(value: unknown, attrName: string) {
   return record === null ? null : textValue(record[`@_${attrName}`]);
 }
 
-function validImageUrl(value: string | null, baseUrl: string) {
+export function validImageUrl(value: string | null, baseUrl: string) {
   if (value === null) {
     return null;
   }
@@ -171,7 +179,7 @@ function timestamp(value: string | null) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function parseFeed(xml: string, canonicalFeedUrl: string) {
+export function parseFeed(xml: string, canonicalFeedUrl: string): ParsedFeed {
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
@@ -261,6 +269,13 @@ export function parseFeed(xml: string, canonicalFeedUrl: string) {
   throw new ConvexError(
     "Submitted Feed URL must point directly to RSS or Atom",
   );
+}
+
+export function newestEntries(entries: FeedEntry[], limit: number) {
+  return entries
+    .slice()
+    .sort((a, b) => (b.publishedAt ?? 0) - (a.publishedAt ?? 0))
+    .slice(0, limit);
 }
 
 async function requireCurrentReader(ctx: QueryCtx | MutationCtx) {

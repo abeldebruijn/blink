@@ -1,6 +1,6 @@
 import { embed, embedMany, generateText, gateway } from "ai";
 import { openai } from "@ai-sdk/openai";
-import { validImageUrl } from "@/lib/feed-imports";
+import { validImageUrl } from "@/convex/feedImports";
 
 const firecrawlScrapeUrl = "https://api.firecrawl.dev/v2/scrape";
 const maxStoredContentLength = 60_000;
